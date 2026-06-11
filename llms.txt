@@ -1,0 +1,56 @@
+# rasuvaeff/yii3-ab-testing-outbox
+
+Outbox producer for Yii3 A/B testing events. Records exposures/conversions as
+durable `yii3-outbox` messages; a worker exports them later.
+
+## Install
+
+```bash
+composer require rasuvaeff/yii3-ab-testing-outbox
+```
+
+## Rules
+
+- `OutboxExposureTracker` / `OutboxConversionTracker` implement
+  `ExposureTracker` / `ConversionTracker`; each calls `Outbox::record()`.
+- NOT `FlushableTracker` — the event is persisted immediately (no request buffer).
+- Message types: `ab.exposure`, `ab.conversion` (`AbTestingOutboxEventType`).
+- Payload field names match the analytics columns of `yii3-ab-testing-clickhouse`
+  (source of truth); flags are int `0|1`; `environment` always present;
+  conversion adds non-empty `goal`.
+- Aggregate id: `experiment:subject_id` / `experiment:subject_id:goal` (diagnostics
+  only, not a ClickHouse column).
+- One-source rule: binds `ExposureTracker` + `ConversionTracker`; do not install
+  next to another tracker backend without an app-side `Composite*Tracker`.
+
+## API
+
+```php
+use Rasuvaeff\Yii3AbTestingOutbox\OutboxExposureTracker;
+use Rasuvaeff\Yii3AbTestingOutbox\OutboxConversionTracker;
+use Rasuvaeff\Yii3AbTestingOutbox\AbTestingClickHouseRoutes;
+use Rasuvaeff\Yii3Outbox\Outbox;
+
+$outbox = new Outbox(storage: $storage, clock: $clock);
+$exposure = new OutboxExposureTracker($outbox);
+$conversion = new OutboxConversionTracker($outbox);
+
+$exposure->trackExposure($assignment);
+$conversion->trackConversion($assignment, goal: 'purchase');
+
+// route map for yii3-outbox-clickhouse (leading event_id column for dedup):
+$routes = AbTestingClickHouseRoutes::map();
+// custom names:
+$routes = AbTestingClickHouseRoutes::map(exposuresTable: 'ab_exposures', conversionsTable: 'ab_conversions', eventIdColumn: 'event_id');
+```
+
+Custom serialization: implement `AbTestingOutboxMessageFactoryInterface`
+(default `DefaultAbTestingOutboxMessageFactory`) and pass it to the trackers.
+
+## Exposure payload
+
+```json
+{"experiment":"checkout","variant":"green","subject_id":"user-1","is_forced":0,"is_fallback":0,"is_sticky":0,"environment":"production"}
+```
+
+Conversion adds `"goal":"purchase"`.
