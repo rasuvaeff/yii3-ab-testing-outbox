@@ -5,18 +5,27 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3AbTestingOutbox;
 
 use InvalidArgumentException;
+use Psr\Clock\ClockInterface;
 use Rasuvaeff\Yii3AbTesting\Assignment;
 
 /**
  * Default JSON factory. Boolean flags are serialized as `0|1` (ClickHouse
  * `UInt8`-friendly), `environment` is always present (empty string when no
- * context). Payload field names match the analytics columns owned by
+ * context), and `event_at` carries the event time (UTC `Y-m-d H:i:s`) from the
+ * injected clock — the moment the event was tracked, not when a worker later
+ * exports it. Payload field names match the analytics columns owned by
  * `yii3-ab-testing-clickhouse` (see {@see AbTestingClickHouseRoutes}).
  *
  * @api
  */
 final readonly class DefaultAbTestingOutboxMessageFactory implements AbTestingOutboxMessageFactoryInterface
 {
+    private const string DATETIME_FORMAT = 'Y-m-d H:i:s';
+
+    public function __construct(
+        private ClockInterface $clock = new SystemClock(),
+    ) {}
+
     #[\Override]
     public function exposure(Assignment $assignment): AbTestingOutboxPayload
     {
@@ -50,6 +59,7 @@ final readonly class DefaultAbTestingOutboxMessageFactory implements AbTestingOu
     private function baseFields(Assignment $assignment): array
     {
         return [
+            'event_at' => $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format(self::DATETIME_FORMAT),
             'experiment' => $assignment->experiment,
             'variant' => $assignment->variant,
             'subject_id' => $assignment->subjectId,

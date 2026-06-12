@@ -52,14 +52,15 @@ final class ClickHouseRoutesContractTest extends TestCase
     }
 
     /**
-     * Route columns with the leading transport `event_id` dropped.
+     * Route columns with the transport-meta columns (`event_id`, `event_at`) dropped.
      *
      * @return list<string>
      */
     private function analyticColumns(string $type): array
     {
+        $meta = ['event_id', 'event_at'];
         $columns = AbTestingClickHouseRoutes::map()[$type]['columns'];
 
-        return array_values(array_filter($columns, static fn(string $column): bool => $column !== 'event_id'));
+        return array_values(array_filter($columns, static fn(string $column): bool => !\in_array($column, $meta, true)));
     }
 }

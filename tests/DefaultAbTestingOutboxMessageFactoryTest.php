@@ -8,6 +8,7 @@ use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Psr\Clock\ClockInterface;
 use Rasuvaeff\Yii3AbTesting\Assignment;
 use Rasuvaeff\Yii3AbTesting\AssignmentContext;
 use Rasuvaeff\Yii3AbTestingOutbox\DefaultAbTestingOutboxMessageFactory;
@@ -20,7 +21,10 @@ final class DefaultAbTestingOutboxMessageFactoryTest extends TestCase
     #[\Override]
     protected function setUp(): void
     {
-        $this->factory = new DefaultAbTestingOutboxMessageFactory();
+        $clock = $this->createStub(ClockInterface::class);
+        $clock->method('now')->willReturn(new \DateTimeImmutable('2026-06-12 10:00:00', new \DateTimeZone('UTC')));
+
+        $this->factory = new DefaultAbTestingOutboxMessageFactory(clock: $clock);
     }
 
     #[Test]
@@ -36,6 +40,7 @@ final class DefaultAbTestingOutboxMessageFactoryTest extends TestCase
         $this->assertSame('ab.exposure', $payload->type);
         $this->assertSame('checkout:user-1', $payload->aggregateId);
         $this->assertSame([
+            'event_at' => '2026-06-12 10:00:00',
             'experiment' => 'checkout',
             'variant' => 'green',
             'subject_id' => 'user-1',
@@ -57,6 +62,7 @@ final class DefaultAbTestingOutboxMessageFactoryTest extends TestCase
         $this->assertSame('ab.conversion', $payload->type);
         $this->assertSame('checkout:user-1:purchase', $payload->aggregateId);
         $this->assertSame([
+            'event_at' => '2026-06-12 10:00:00',
             'experiment' => 'checkout',
             'variant' => 'green',
             'subject_id' => 'user-1',
@@ -66,6 +72,18 @@ final class DefaultAbTestingOutboxMessageFactoryTest extends TestCase
             'environment' => '',
             'goal' => 'purchase',
         ], $this->decode($payload->payload));
+    }
+
+    #[Test]
+    public function stampsEventTimeFromClockNormalizedToUtc(): void
+    {
+        $clock = $this->createStub(ClockInterface::class);
+        $clock->method('now')->willReturn(new \DateTimeImmutable('2026-06-12 15:00:00', new \DateTimeZone('Europe/Berlin')));
+        $factory = new DefaultAbTestingOutboxMessageFactory(clock: $clock);
+
+        $payload = $factory->exposure(new Assignment(experiment: 'e', variant: 'a', subjectId: 'u'));
+
+        $this->assertSame('2026-06-12 13:00:00', $this->decode($payload->payload)['event_at']);
     }
 
     #[Test]

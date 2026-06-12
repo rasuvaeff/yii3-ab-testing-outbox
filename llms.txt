@@ -50,7 +50,7 @@ Custom serialization: implement `AbTestingOutboxMessageFactoryInterface`
 ## Exposure payload
 
 ```json
-{"experiment":"checkout","variant":"green","subject_id":"user-1","is_forced":0,"is_fallback":0,"is_sticky":0,"environment":"production"}
+{"event_at":"2026-06-12 10:00:00","experiment":"checkout","variant":"green","subject_id":"user-1","is_forced":0,"is_fallback":0,"is_sticky":0,"environment":"production"}
 ```
 
 Conversion adds `"goal":"purchase"`.

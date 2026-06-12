@@ -28,6 +28,7 @@ a worker exports the outbox asynchronously (e.g. with `yii3-outbox-clickhouse`).
 - PHP 8.3+
 - `rasuvaeff/yii3-ab-testing` ^1.2
 - `rasuvaeff/yii3-outbox` ^1.0
+- `psr/clock` ^1.0
 
 ## Installation
 
@@ -59,16 +60,19 @@ $conversionTracker->trackConversion($assignment, goal: 'purchase');
 match the analytics columns of `yii3-ab-testing-clickhouse`:
 
 ```json
-{"experiment":"checkout","variant":"green","subject_id":"user-1","is_forced":0,"is_fallback":0,"is_sticky":0,"environment":"production"}
+{"event_at":"2026-06-12 10:00:00","experiment":"checkout","variant":"green","subject_id":"user-1","is_forced":0,"is_fallback":0,"is_sticky":0,"environment":"production"}
 ```
 
 Conversions add `"goal"`. Flags are `0|1`; `environment` is always present.
+`event_at` is the event time (UTC `Y-m-d H:i:s`) stamped when tracked — distinct
+from the worker's export time.
 
 ### ClickHouse routing
 
 `AbTestingClickHouseRoutes::map()` returns a ready-made route map for
-`yii3-outbox-clickhouse`, with a leading `event_id` column the exporter fills from
-the message id for `ReplacingMergeTree` dedup:
+`yii3-outbox-clickhouse`. Two transport-meta columns lead each row: `event_id`
+(filled by the exporter from the message id, for `ReplacingMergeTree` dedup) and
+`event_at` (event time from the payload):
 
 ```php
 use Rasuvaeff\Yii3AbTestingOutbox\AbTestingClickHouseRoutes;

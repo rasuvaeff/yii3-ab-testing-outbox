@@ -10,9 +10,10 @@ namespace Rasuvaeff\Yii3AbTestingOutbox;
  * dependency.
  *
  * The analytics columns mirror those owned by `yii3-ab-testing-clickhouse`
- * (the single source of truth), with a leading `event_id` column that the
- * exporter fills from the outbox message id for `ReplacingMergeTree` dedup. A
- * contract test asserts the two stay in sync.
+ * (the single source of truth). Two transport-meta columns precede them:
+ * `event_id` (filled by the exporter from the outbox message id, for
+ * `ReplacingMergeTree` dedup) and `event_at` (the event time from the payload). A
+ * contract test asserts the analytics columns stay in sync with the SoT.
  *
  * @api
  */
@@ -33,11 +34,11 @@ final class AbTestingClickHouseRoutes
         return [
             AbTestingOutboxEventType::Exposure->value => [
                 'table' => $exposuresTable,
-                'columns' => [$eventIdColumn, 'experiment', 'variant', 'subject_id', 'is_forced', 'is_fallback', 'is_sticky', 'environment'],
+                'columns' => [$eventIdColumn, 'event_at', 'experiment', 'variant', 'subject_id', 'is_forced', 'is_fallback', 'is_sticky', 'environment'],
             ],
             AbTestingOutboxEventType::Conversion->value => [
                 'table' => $conversionsTable,
-                'columns' => [$eventIdColumn, 'experiment', 'variant', 'subject_id', 'goal', 'is_forced', 'is_fallback', 'is_sticky', 'environment'],
+                'columns' => [$eventIdColumn, 'event_at', 'experiment', 'variant', 'subject_id', 'goal', 'is_forced', 'is_fallback', 'is_sticky', 'environment'],
             ],
         ];
     }

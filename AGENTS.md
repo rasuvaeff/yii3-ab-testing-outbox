@@ -61,6 +61,9 @@ also installed (it is not a dependency); otherwise it skips.
   (`AbTestingOutboxEventType`).
 - Boolean flags serialize as int `0|1`; `environment` is always present
   (`''` without context); conversion adds `goal` (non-empty, validated).
+- `event_at` (UTC `Y-m-d H:i:s`) is stamped from the injected `ClockInterface`
+  (default `SystemClock`) at track time — the event time, not the export time. It
+  and `event_id` are transport-meta route columns excluded from the SoT contract.
 - Aggregate id: `experiment:subject_id` (exposure),
   `experiment:subject_id:goal` (conversion) — diagnostics only, not part of the
   ClickHouse schema.

@@ -21,6 +21,8 @@ final class AbTestingClickHouseRoutesTest extends TestCase
         $this->assertSame('ab_exposures', $map['ab.exposure']['table']);
         $this->assertSame('ab_conversions', $map['ab.conversion']['table']);
         $this->assertSame('event_id', $map['ab.exposure']['columns'][0]);
+        $this->assertSame('event_at', $map['ab.exposure']['columns'][1]);
+        $this->assertContains('event_at', $map['ab.conversion']['columns']);
         $this->assertContains('goal', $map['ab.conversion']['columns']);
         $this->assertNotContains('goal', $map['ab.exposure']['columns']);
     }
