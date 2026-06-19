@@ -13,13 +13,17 @@ use Rasuvaeff\Yii3AbTesting\Assignment;
  * `UInt8`-friendly), `environment` is always present (empty string when no
  * context), and `event_at` carries the event time (UTC `Y-m-d H:i:s`) from the
  * injected clock — the moment the event was tracked, not when a worker later
- * exports it. Payload field names match the analytics columns owned by
+ * exports it. A transport-meta `v` field carries {@see PAYLOAD_VERSION} so
+ * downstream consumers can distinguish schema generations without parsing every
+ * field. Payload field names match the analytics columns owned by
  * `yii3-ab-testing-clickhouse` (see {@see AbTestingClickHouseRoutes}).
  *
  * @api
  */
 final readonly class DefaultAbTestingOutboxMessageFactory implements AbTestingOutboxMessageFactoryInterface
 {
+    public const int PAYLOAD_VERSION = 1;
+
     private const string DATETIME_FORMAT = 'Y-m-d H:i:s';
 
     public function __construct(
@@ -59,6 +63,7 @@ final readonly class DefaultAbTestingOutboxMessageFactory implements AbTestingOu
     private function baseFields(Assignment $assignment): array
     {
         return [
+            'v' => self::PAYLOAD_VERSION,
             'event_at' => $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format(self::DATETIME_FORMAT),
             'experiment' => $assignment->experiment,
             'variant' => $assignment->variant,

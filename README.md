@@ -60,9 +60,12 @@ $conversionTracker->trackConversion($assignment, goal: 'purchase');
 match the analytics columns of `yii3-ab-testing-clickhouse`:
 
 ```json
-{"event_at":"2026-06-12 10:00:00","experiment":"checkout","variant":"green","subject_id":"user-1","is_forced":0,"is_fallback":0,"is_sticky":0,"environment":"production"}
+{"v":1,"event_at":"2026-06-12 10:00:00","experiment":"checkout","variant":"green","subject_id":"user-1","is_forced":0,"is_fallback":0,"is_sticky":0,"environment":"production"}
 ```
 
+The leading `v` field is a transport-meta schema version (`DefaultAbTestingOutboxMessageFactory::PAYLOAD_VERSION`).
+It is **not** listed in `AbTestingClickHouseRoutes` columns and is never written to ClickHouse — it exists
+so downstream consumers reading raw outbox messages can detect payload schema generations.
 Conversions add `"goal"`. Flags are `0|1`; `environment` is always present.
 `event_at` is the event time (UTC `Y-m-d H:i:s`) stamped when tracked — distinct
 from the worker's export time.

@@ -15,6 +15,8 @@ composer require rasuvaeff/yii3-ab-testing-outbox
   `ExposureTracker` / `ConversionTracker`; each calls `Outbox::record()`.
 - NOT `FlushableTracker` — the event is persisted immediately (no request buffer).
 - Message types: `ab.exposure`, `ab.conversion` (`AbTestingOutboxEventType`).
+- Payload starts with transport-meta `v` (int, schema version =
+  `DefaultAbTestingOutboxMessageFactory::PAYLOAD_VERSION`); NOT a ClickHouse column.
 - Payload field names match the analytics columns of `yii3-ab-testing-clickhouse`
   (source of truth); flags are int `0|1`; `environment` always present;
   conversion adds non-empty `goal`.
@@ -50,7 +52,7 @@ Custom serialization: implement `AbTestingOutboxMessageFactoryInterface`
 ## Exposure payload
 
 ```json
-{"event_at":"2026-06-12 10:00:00","experiment":"checkout","variant":"green","subject_id":"user-1","is_forced":0,"is_fallback":0,"is_sticky":0,"environment":"production"}
+{"v":1,"event_at":"2026-06-12 10:00:00","experiment":"checkout","variant":"green","subject_id":"user-1","is_forced":0,"is_fallback":0,"is_sticky":0,"environment":"production"}
 ```
 
-Conversion adds `"goal":"purchase"`.
+Conversion adds `"goal":"purchase"`. `v` is transport-meta only — not exported to ClickHouse.

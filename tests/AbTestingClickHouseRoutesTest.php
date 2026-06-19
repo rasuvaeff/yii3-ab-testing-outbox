@@ -28,6 +28,15 @@ final class AbTestingClickHouseRoutesTest extends TestCase
     }
 
     #[Test]
+    public function doesNotExposeVersionFieldAsClickHouseColumn(): void
+    {
+        $map = AbTestingClickHouseRoutes::map();
+
+        $this->assertNotContains('v', $map['ab.exposure']['columns']);
+        $this->assertNotContains('v', $map['ab.conversion']['columns']);
+    }
+
+    #[Test]
     public function honoursCustomTableAndColumnNames(): void
     {
         $map = AbTestingClickHouseRoutes::map(
