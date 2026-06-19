@@ -40,6 +40,7 @@ final class DefaultAbTestingOutboxMessageFactoryTest extends TestCase
         $this->assertSame('ab.exposure', $payload->type);
         $this->assertSame('checkout:user-1', $payload->aggregateId);
         $this->assertSame([
+            'v' => 1,
             'event_at' => '2026-06-12 10:00:00',
             'experiment' => 'checkout',
             'variant' => 'green',
@@ -62,6 +63,7 @@ final class DefaultAbTestingOutboxMessageFactoryTest extends TestCase
         $this->assertSame('ab.conversion', $payload->type);
         $this->assertSame('checkout:user-1:purchase', $payload->aggregateId);
         $this->assertSame([
+            'v' => 1,
             'event_at' => '2026-06-12 10:00:00',
             'experiment' => 'checkout',
             'variant' => 'green',
@@ -110,6 +112,16 @@ final class DefaultAbTestingOutboxMessageFactoryTest extends TestCase
         $payload = $this->factory->exposure(new Assignment(experiment: 'e', variant: 'a', subjectId: 'u'));
 
         $this->assertSame('', $this->decode($payload->payload)['environment']);
+    }
+
+    #[Test]
+    public function payloadVersionIsFirstField(): void
+    {
+        $payload = $this->factory->exposure(new Assignment(experiment: 'e', variant: 'a', subjectId: 'u'));
+
+        $fields = $this->decode($payload->payload);
+        $this->assertSame(1, $fields['v']);
+        $this->assertSame('v', array_key_first($fields));
     }
 
     #[Test]
