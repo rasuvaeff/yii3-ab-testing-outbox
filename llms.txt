@@ -9,6 +9,15 @@ durable `yii3-outbox` messages; a worker exports them later.
 composer require rasuvaeff/yii3-ab-testing-outbox
 ```
 
+## Development
+
+```bash
+make build
+make test
+make test-coverage
+make mutation
+```
+
 ## Rules
 
 - `OutboxExposureTracker` / `OutboxConversionTracker` implement

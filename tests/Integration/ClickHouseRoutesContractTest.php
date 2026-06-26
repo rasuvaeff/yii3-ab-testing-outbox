@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3AbTestingOutbox\Tests\Integration;
 
-use PHPUnit\Framework\Attributes\CoversNothing;
-use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\TestCase;
 use Rasuvaeff\Yii3AbTestingOutbox\AbTestingClickHouseRoutes;
+use Testo\Assert;
+use Testo\Codecov\CoversNothing;
+use Testo\Lifecycle\BeforeTest;
+use Testo\Test;
 
 /**
  * Decision 4 guard: the analytics columns in {@see AbTestingClickHouseRoutes}
@@ -16,39 +17,52 @@ use Rasuvaeff\Yii3AbTestingOutbox\AbTestingClickHouseRoutes;
  * (it is not a hard dependency of the producer), so the column lists are only
  * compared when both are present.
  */
+#[Test]
 #[CoversNothing]
-final class ClickHouseRoutesContractTest extends TestCase
+final class ClickHouseRoutesContractTest
 {
     private const string EXPOSURE_SINK = 'Rasuvaeff\\Yii3AbTestingClickHouse\\ClickHouseExposureTracker';
 
     private const string CONVERSION_SINK = 'Rasuvaeff\\Yii3AbTestingClickHouse\\ClickHouseConversionTracker';
 
-    #[\Override]
-    protected function setUp(): void
+    #[BeforeTest]
+    public function setUp(): void
     {
         if (!class_exists(self::EXPOSURE_SINK) || !class_exists(self::CONVERSION_SINK)) {
-            $this->markTestSkipped('yii3-ab-testing-clickhouse is not installed; skipping the SoT column contract check.');
+            Assert::true(true);
+
+            return;
         }
     }
 
-    #[Test]
     public function exposureColumnsMatchSinkSourceOfTruth(): void
     {
+        if (!class_exists(self::EXPOSURE_SINK)) {
+            Assert::true(true);
+
+            return;
+        }
+
         $sinkClass = self::EXPOSURE_SINK;
         /** @var list<string> $sinkColumns */
         $sinkColumns = $sinkClass::COLUMNS;
 
-        $this->assertSame($sinkColumns, $this->analyticColumns('ab.exposure'));
+        Assert::same($this->analyticColumns('ab.exposure'), $sinkColumns);
     }
 
-    #[Test]
     public function conversionColumnsMatchSinkSourceOfTruth(): void
     {
+        if (!class_exists(self::CONVERSION_SINK)) {
+            Assert::true(true);
+
+            return;
+        }
+
         $sinkClass = self::CONVERSION_SINK;
         /** @var list<string> $sinkColumns */
         $sinkColumns = $sinkClass::COLUMNS;
 
-        $this->assertSame($sinkColumns, $this->analyticColumns('ab.conversion'));
+        Assert::same($this->analyticColumns('ab.conversion'), $sinkColumns);
     }
 
     /**
