@@ -4,34 +4,35 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3AbTestingOutbox\Tests;
 
-use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\TestCase;
-use Psr\Clock\ClockInterface;
 use Rasuvaeff\Yii3AbTesting\Assignment;
 use Rasuvaeff\Yii3AbTesting\FlushableTracker;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxConversionTracker;
 use Rasuvaeff\Yii3Outbox\InMemoryStorage;
 use Rasuvaeff\Yii3Outbox\Outbox;
+use Testo\Assert;
+use Testo\Codecov\Covers;
+use Testo\Lifecycle\BeforeTest;
+use Testo\Test;
 
-#[CoversClass(OutboxConversionTracker::class)]
-final class OutboxConversionTrackerTest extends TestCase
+#[Test]
+#[Covers(OutboxConversionTracker::class)]
+final class OutboxConversionTrackerTest
 {
     private InMemoryStorage $storage;
 
     private OutboxConversionTracker $tracker;
 
-    #[\Override]
-    protected function setUp(): void
+    #[BeforeTest]
+    public function setUp(): void
     {
         $this->storage = new InMemoryStorage();
-        $clock = $this->createStub(ClockInterface::class);
-        $clock->method('now')->willReturn(new \DateTimeImmutable('2026-06-11 12:00:00'));
 
-        $this->tracker = new OutboxConversionTracker(new Outbox(storage: $this->storage, clock: $clock));
+        $this->tracker = new OutboxConversionTracker(new Outbox(
+            storage: $this->storage,
+            clock: new FakeClock(new \DateTimeImmutable('2026-06-11 12:00:00')),
+        ));
     }
 
-    #[Test]
     public function recordsConversionAsOutboxMessage(): void
     {
         $this->tracker->trackConversion(
@@ -40,15 +41,14 @@ final class OutboxConversionTrackerTest extends TestCase
         );
 
         $pending = $this->storage->findPending();
-        $this->assertCount(1, $pending);
-        $this->assertSame('ab.conversion', $pending[0]->getType());
-        $this->assertStringContainsString('"goal":"purchase"', $pending[0]->getPayload());
-        $this->assertSame('checkout:user-1:purchase', $pending[0]->getAggregateId());
+        Assert::count($pending, 1);
+        Assert::same($pending[0]->getType(), 'ab.conversion');
+        Assert::string($pending[0]->getPayload())->contains('"goal":"purchase"');
+        Assert::same($pending[0]->getAggregateId(), 'checkout:user-1:purchase');
     }
 
-    #[Test]
     public function isNotFlushable(): void
     {
-        $this->assertNotInstanceOf(FlushableTracker::class, $this->tracker);
+        Assert::false($this->tracker instanceof FlushableTracker);
     }
 }

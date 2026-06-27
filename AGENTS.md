@@ -52,6 +52,21 @@ keeps a clean Packagist `^1.0` constraint for `yii3-outbox` with no committed
 `repositories` block. GitHub CI is red until `yii3-outbox` is on Packagist —
 expected. `composer.lock` is gitignored (library).
 
+Or with Make:
+
+```bash
+make build
+make cs-fix
+make psalm
+make test
+make test-coverage
+make mutation
+make release-check
+```
+
+`make test-coverage` and `make mutation` bootstrap `pcov` inside the
+`composer:2` container because the base image has no coverage driver.
+
 The `ClickHouseRoutesContractTest` only runs when `yii3-ab-testing-clickhouse` is
 also installed (it is not a dependency); otherwise it skips.
 
@@ -74,6 +89,14 @@ also installed (it is not a dependency); otherwise it skips.
   `CompositeExposureTracker` / `CompositeConversionTracker` in its own config.
 - Code: `declare(strict_types=1)`, `final readonly class`, `#[\Override]`,
   explicit types.
+- **CI workflows are SHA-pinned.** Every `uses:` in `.github/workflows/*.yml`
+  references a 40-char commit SHA with a `# vN` trailing comment
+  (e.g. `actions/checkout@<sha> # v4`). Never revert to floating `@vN` tags.
+  Updates go through Dependabot, which bumps the SHA and preserves the comment.
+  Workflows also carry `permissions: { contents: read }` at workflow level and
+  `persist-credentials: false` on every `actions/checkout` step. Verify with
+  `zizmor --persona=auditor .github/` — must report no `unpinned-uses`,
+  `excessive-permissions`, or `artipacked` findings.
 
 ## When you finish
 

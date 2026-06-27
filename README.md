@@ -116,6 +116,9 @@ See [`examples/`](examples/).
 
 ```bash
 make build
+make test
+make test-coverage
+make mutation
 ```
 
 See [AGENTS.md](AGENTS.md) for the monorepo-root Docker invocation (path repo).
