@@ -104,8 +104,25 @@ return [
 
 ## Security
 
+- **`subject_id` is written to two places, not one.** It is a field inside the
+  JSON payload *and* a component of the outbox message's `aggregate_id`, which
+  is a top-level column of the outbox table:
+
+  | Message | `aggregate_id` |
+  |---|---|
+  | `ab.exposure` | `<experiment>:<subject_id>` |
+  | `ab.conversion` | `<experiment>:<subject_id>:<goal>` |
+
+  If `subject_id` is PII, so is that column. Anything that reads the outbox
+  table without parsing payloads — an admin screen listing messages by
+  aggregate, a log line, a metric label, a support export — exposes it. A
+  redaction or retention policy applied only to the payload misses it.
+
 - `subject_id` may be PII; this package never hashes it silently — privacy policy
-  is the application's.
+  is the application's. Hash or pseudonymise it **before** it reaches
+  `Assignment`, so that both the payload and the `aggregate_id` carry the same
+  safe value. Hashing at the sink is too late: the outbox row already holds the
+  original.
 - Payloads are JSON strings written through the outbox; `goal`/`experiment` are
   trusted analytics dimensions from your application.
 
