@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.3 — 2026-07-26
 
 - Security docs: state that `subject_id` lands in the outbox `aggregate_id`
   column as well as in the JSON payload (`<experiment>:<subject_id>` for
