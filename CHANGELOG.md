@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Security docs: state that `subject_id` lands in the outbox `aggregate_id`
+  column as well as in the JSON payload (`<experiment>:<subject_id>` for
+  exposures, plus `:<goal>` for conversions). Only the payload was documented,
+  so a redaction or retention policy written from the README would have missed a
+  top-level column holding the same identifier — visible to anything that reads
+  outbox rows without parsing payloads.
+- `AGENTS.md`: the "When you finish" checklist now requires `README.ru.md`
+  alongside `README.md`, matching the monorepo rule.
+
 ## 1.2.2 — 2026-06-30
 
 - Add `/benchmarks` and `/Makefile` to `.gitattributes` export-ignore.
