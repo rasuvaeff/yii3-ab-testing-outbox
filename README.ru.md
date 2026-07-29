@@ -40,6 +40,13 @@
 composer require rasuvaeff/yii3-ab-testing-outbox
 ```
 
+Для полного долговечного пути в ClickHouse установите также DB-хранилище и
+экспортёр, на которых работает проверенный pipeline:
+
+```bash
+composer require rasuvaeff/yii3-outbox-db rasuvaeff/yii3-outbox-clickhouse
+```
+
 ## Использование
 
 ```php
@@ -78,16 +85,41 @@ $conversionTracker->trackConversion($assignment, goal: 'purchase');
 
 ### Маршрутизация ClickHouse
 
-`AbTestingClickHouseRoutes::map()` возвращает готовую карту маршрутов для
-`yii3-outbox-clickhouse`. Каждую строку предваряют две transport-meta колонки:
-`event_id` (заполняется экспортёром из id сообщения — для дедупликации через
-`ReplacingMergeTree`) и `event_at` (время события из payload'а):
+Пакет поставляет совместимую ClickHouse-схему v1 в `migrations/` и совпадающий с
+ней `AbTestingClickHouseRoutes::map()`. Таблицы по умолчанию называются
+`ab_outbox_exposures` и `ab_outbox_conversions`: они намеренно отличаются от
+несовместимых таблиц direct sink. Каждую строку предваряют две transport-meta
+колонки: `event_id` (экспортёр заполняет её id сообщения для дедупликации через
+`ReplacingMergeTree`) и `event_at` (время события из payload'а).
+
+Примените DDL с теми же именами, которые переданы в route map:
 
 ```php
+use Rasuvaeff\ClickHouseToolkit\ClickHouseMigrationRunner;
 use Rasuvaeff\Yii3AbTestingOutbox\AbTestingClickHouseRoutes;
+
+(new ClickHouseMigrationRunner(
+    client: $clickHouseClient,
+    migrationsPath: __DIR__ . '/vendor/rasuvaeff/yii3-ab-testing-outbox/migrations',
+    placeholders: [
+        'outbox_exposures_table' => AbTestingClickHouseRoutes::EXPOSURES_TABLE,
+        'outbox_conversions_table' => AbTestingClickHouseRoutes::CONVERSIONS_TABLE,
+    ],
+))->run();
 
 $router = new MapClickHouseMessageRouter(routes: AbTestingClickHouseRoutes::map());
 ```
+
+Таблицы используют `ReplacingMergeTree ORDER BY event_id`, поэтому повторная
+доставка одного outbox-сообщения при at-least-once семантике схлопывается во
+время merge в ClickHouse. Время приёма `ingested_at` хранится отдельно от
+payload-поля `event_at`.
+
+До 1.2.4 route defaults были `ab_exposures` / `ab_conversions`, но пакет не
+поставлял подходящий DDL, а имена пересекались с другой схемой direct sink.
+Приложения, самостоятельно создавшие совместимые таблицы под старыми именами,
+могут сохранить их, явно передав оба имени в `map()`. Никогда не направляйте
+outbox-строки в таблицы direct-пакета.
 
 ### Yii3 DI
 
@@ -143,6 +175,7 @@ make build
 make test
 make test-coverage
 make mutation
+vendor/bin/testo --suite=Integration # требует CLICKHOUSE_HOST; в CI запускается с живым ClickHouse
 ```
 
 Инструкции по Docker с монтированием корня монорепо см. в [AGENTS.md](AGENTS.md)

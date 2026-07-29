@@ -37,7 +37,7 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           coverage: none
-          extensions: json
+          extensions: json, mbstring
           tools: composer:v2
 
       - name: Cache Composer dependencies
@@ -52,6 +52,53 @@ jobs:
 
       - name: Build
         run: composer build
+
+  integration:
+    name: Durable ClickHouse pipeline
+    runs-on: ubuntu-latest
+
+    services:
+      clickhouse:
+        image: clickhouse/clickhouse-server:24.8@sha256:1ffa82edee000a42c09313bd9f1293d94c570aee74babc1b3ca9983a35fa597b
+        env:
+          CLICKHOUSE_PASSWORD: ch_test
+        ports:
+          - 8123:8123
+        options: >-
+          --health-cmd "clickhouse-client --password ch_test --query 'SELECT 1'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          coverage: none
+          extensions: json, mbstring, pdo_sqlite
+          tools: composer:v2
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ runner.os }}-${{ hashFiles('**/composer.json') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Run durable pipeline integration tests
+        env:
+          CLICKHOUSE_HOST: 127.0.0.1
+          CLICKHOUSE_PASSWORD: ch_test
+        run: vendor/bin/testo --suite=Integration
 
   prefer-lowest:
     name: Prefer lowest
@@ -68,7 +115,7 @@ jobs:
         with:
           php-version: '8.3'
           coverage: none
-          extensions: json
+          extensions: json, mbstring
           tools: composer:v2
 
       - name: Cache Composer dependencies
@@ -99,7 +146,7 @@ jobs:
         with:
           php-version: '8.4'
           coverage: pcov
-          extensions: json
+          extensions: json, mbstring
           tools: composer:v2
 
       - name: Cache Composer dependencies
@@ -134,7 +181,7 @@ jobs:
         with:
           php-version: '8.4'
           coverage: none
-          extensions: json, bcmath, intl
+          extensions: json, mbstring, bcmath, intl
           tools: composer:v2
 
       - name: Cache Composer dependencies

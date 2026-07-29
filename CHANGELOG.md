@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.4 — 2026-07-29
+
+- Ship compatible ClickHouse v1 DDL for the outbox routes, using
+  `ReplacingMergeTree ORDER BY event_id` and separate `event_at` /
+  `ingested_at` timestamps.
+- Change route defaults to distinct `ab_outbox_exposures` and
+  `ab_outbox_conversions` tables. The old defaults collided with the direct
+  sink's incompatible schema; explicit custom names remain supported.
+- Add a live clean-install integration path from trackers through SQLite-backed
+  `yii3-outbox-db` and `yii3-outbox-clickhouse` into the shipped tables.
+
 ## 1.2.3 — 2026-07-26
 
 - Security docs: state that `subject_id` lands in the outbox `aggregate_id`
@@ -38,6 +49,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `OutboxExposureTracker` / `OutboxConversionTracker` — `ExposureTracker` / `ConversionTracker` implementations that record each event as a durable outbox message via `Outbox::record()`. Deliberately not `FlushableTracker` (the event is persisted immediately).
 - `AbTestingOutboxEventType` — stable message types `ab.exposure` / `ab.conversion`.
 - `AbTestingOutboxMessageFactoryInterface` + `DefaultAbTestingOutboxMessageFactory` — JSON payloads with `0|1` flags and an always-present `environment`; deterministic aggregate ids.
-- `AbTestingClickHouseRoutes::map()` — ready-made route map for `yii3-outbox-clickhouse` (analytics columns mirror `yii3-ab-testing-clickhouse`, with a leading `event_id` for `ReplacingMergeTree` dedup; a contract test guards the match).
+- `AbTestingClickHouseRoutes::map()` — route map for `yii3-outbox-clickhouse` (analytics columns mirror `yii3-ab-testing-clickhouse`, with a leading `event_id` for `ReplacingMergeTree` dedup; a contract test guards the match).
 - Yii3 config-plugin: binds `ExposureTracker` and `ConversionTracker` from `config/di.php`.
-

@@ -18,8 +18,8 @@ final class AbTestingClickHouseRoutesTest
         $map = AbTestingClickHouseRoutes::map();
 
         Assert::same(array_keys($map), ['ab.exposure', 'ab.conversion']);
-        Assert::same($map['ab.exposure']['table'], 'ab_exposures');
-        Assert::same($map['ab.conversion']['table'], 'ab_conversions');
+        Assert::same($map['ab.exposure']['table'], 'ab_outbox_exposures');
+        Assert::same($map['ab.conversion']['table'], 'ab_outbox_conversions');
         Assert::same($map['ab.exposure']['columns'][0], 'event_id');
         Assert::same($map['ab.exposure']['columns'][1], 'event_at');
         Assert::same($map['ab.conversion']['columns'][0], 'event_id');

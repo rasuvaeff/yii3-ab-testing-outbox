@@ -37,6 +37,13 @@ a worker exports the outbox asynchronously (e.g. with `yii3-outbox-clickhouse`).
 composer require rasuvaeff/yii3-ab-testing-outbox
 ```
 
+For the complete durable ClickHouse path, also install the DB storage and
+exporter used by the tested pipeline:
+
+```bash
+composer require rasuvaeff/yii3-outbox-db rasuvaeff/yii3-outbox-clickhouse
+```
+
 ## Usage
 
 ```php
@@ -73,16 +80,40 @@ from the worker's export time.
 
 ### ClickHouse routing
 
-`AbTestingClickHouseRoutes::map()` returns a ready-made route map for
-`yii3-outbox-clickhouse`. Two transport-meta columns lead each row: `event_id`
-(filled by the exporter from the message id, for `ReplacingMergeTree` dedup) and
-`event_at` (event time from the payload):
+This package ships a compatible v1 ClickHouse schema in `migrations/` and a
+matching `AbTestingClickHouseRoutes::map()`. Its default tables are
+`ab_outbox_exposures` and `ab_outbox_conversions`, deliberately distinct from
+the incompatible direct-sink tables. Two transport-meta columns lead each row:
+`event_id` (filled by the exporter from the message id, for
+`ReplacingMergeTree` dedup) and `event_at` (event time from the payload).
+
+Apply the DDL with the same names passed to the route map:
 
 ```php
+use Rasuvaeff\ClickHouseToolkit\ClickHouseMigrationRunner;
 use Rasuvaeff\Yii3AbTestingOutbox\AbTestingClickHouseRoutes;
+
+(new ClickHouseMigrationRunner(
+    client: $clickHouseClient,
+    migrationsPath: __DIR__ . '/vendor/rasuvaeff/yii3-ab-testing-outbox/migrations',
+    placeholders: [
+        'outbox_exposures_table' => AbTestingClickHouseRoutes::EXPOSURES_TABLE,
+        'outbox_conversions_table' => AbTestingClickHouseRoutes::CONVERSIONS_TABLE,
+    ],
+))->run();
 
 $router = new MapClickHouseMessageRouter(routes: AbTestingClickHouseRoutes::map());
 ```
+
+The tables use `ReplacingMergeTree ORDER BY event_id`; at-least-once retries of
+the same outbox message therefore collapse during ClickHouse merges. They also
+store `ingested_at` separately from the payload's `event_at`.
+
+Before 1.2.4 the route defaults were `ab_exposures` / `ab_conversions`, but this
+package supplied no matching DDL and those names collided with the direct sink's
+different schema. Existing applications that created their own compatible
+tables under the old names can retain them by passing both names explicitly to
+`map()`. Never route outbox rows into the direct package's tables.
 
 ### Yii3 DI
 
@@ -137,6 +168,7 @@ make build
 make test
 make test-coverage
 make mutation
+vendor/bin/testo --suite=Integration # requires CLICKHOUSE_HOST; runs live in CI
 ```
 
 See [AGENTS.md](AGENTS.md) for the monorepo-root Docker invocation (path repo).

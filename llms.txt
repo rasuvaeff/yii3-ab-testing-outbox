@@ -33,6 +33,12 @@ make mutation
   only, not a ClickHouse column).
 - One-source rule: binds `ExposureTracker` + `ConversionTracker`; do not install
   next to another tracker backend without an app-side `Composite*Tracker`.
+- `migrations/` contains the compatible outbox ClickHouse v1 schema. Defaults
+  are `ab_outbox_exposures` / `ab_outbox_conversions`, not the incompatible
+  direct-sink tables; DDL placeholders are `outbox_exposures_table` /
+  `outbox_conversions_table`.
+- The sink tables use `ReplacingMergeTree ORDER BY event_id` for retry dedup and
+  store payload `event_at` separately from server-defaulted `ingested_at`.
 
 ## API
 
@@ -49,11 +55,15 @@ $conversion = new OutboxConversionTracker($outbox);
 $exposure->trackExposure($assignment);
 $conversion->trackConversion($assignment, goal: 'purchase');
 
-// route map for yii3-outbox-clickhouse (leading event_id column for dedup):
+// route map for the shipped ClickHouse DDL (leading event_id for dedup):
 $routes = AbTestingClickHouseRoutes::map();
 // custom names:
-$routes = AbTestingClickHouseRoutes::map(exposuresTable: 'ab_exposures', conversionsTable: 'ab_conversions', eventIdColumn: 'event_id');
+$routes = AbTestingClickHouseRoutes::map(exposuresTable: 'custom_outbox_exposures', conversionsTable: 'custom_outbox_conversions', eventIdColumn: 'event_id');
 ```
+
+Apply `migrations/` with `ClickHouseMigrationRunner` and placeholders matching
+the route names. The clean-install pipeline is:
+`tracker -> yii3-outbox-db -> yii3-outbox-clickhouse -> shipped ClickHouse DDL`.
 
 Custom serialization: implement `AbTestingOutboxMessageFactoryInterface`
 (default `DefaultAbTestingOutboxMessageFactory`) and pass it to the trackers.
