@@ -5,7 +5,7 @@
 - Ship compatible ClickHouse v1 DDL for the outbox routes, using
   `ReplacingMergeTree ORDER BY event_id` and separate `event_at` /
   `ingested_at` timestamps.
-- Change route defaults to distinct `ab_outbox_exposures` and
+- Change the zero-argument route defaults to distinct `ab_outbox_exposures` and
   `ab_outbox_conversions` tables. The old defaults collided with the direct
   sink's incompatible schema; explicit custom names remain supported.
 - Add a live clean-install integration path from trackers through SQLite-backed

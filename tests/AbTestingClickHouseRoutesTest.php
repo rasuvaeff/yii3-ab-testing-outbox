@@ -48,4 +48,15 @@ final class AbTestingClickHouseRoutesTest
         Assert::same($map['ab.conversion']['table'], 'conv');
         Assert::same($map['ab.exposure']['columns'][0], 'eid');
     }
+
+    public function explicitLegacyTableNamesRemainAvailableForMigration(): void
+    {
+        $map = AbTestingClickHouseRoutes::map(
+            exposuresTable: 'ab_exposures',
+            conversionsTable: 'ab_conversions',
+        );
+
+        Assert::same($map['ab.exposure']['table'], 'ab_exposures');
+        Assert::same($map['ab.conversion']['table'], 'ab_conversions');
+    }
 }

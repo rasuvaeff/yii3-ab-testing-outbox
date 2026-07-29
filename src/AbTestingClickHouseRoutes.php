@@ -31,10 +31,17 @@ final class AbTestingClickHouseRoutes
      * @return array<string, array{table: non-empty-string, columns: non-empty-list<string>}>
      */
     public static function map(
-        string $exposuresTable = self::EXPOSURES_TABLE,
-        string $conversionsTable = self::CONVERSIONS_TABLE,
+        string $exposuresTable = 'ab_exposures',
+        string $conversionsTable = 'ab_conversions',
         string $eventIdColumn = 'event_id',
     ): array {
+        // Keep the 1.2.3 signature defaults for reflection-level BC while
+        // making the normal zero-argument call target the shipped v1 schema.
+        if (\func_num_args() === 0) {
+            $exposuresTable = self::EXPOSURES_TABLE;
+            $conversionsTable = self::CONVERSIONS_TABLE;
+        }
+
         return [
             AbTestingOutboxEventType::Exposure->value => [
                 'table' => $exposuresTable,
