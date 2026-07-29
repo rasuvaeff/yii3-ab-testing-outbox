@@ -31,13 +31,23 @@
     "require-dev": {
         "ergebnis/composer-normalize": "^2.51",
         "friendsofphp/php-cs-fixer": "^3.95",
+        "guzzlehttp/guzzle": "^7.9",
         "infection/infection": "^0.33",
         "maglnet/composer-require-checker": "^4.17",
+        "rasuvaeff/clickhouse-toolkit": "^1.6",
+        "rasuvaeff/yii3-ab-testing-clickhouse": "^1.1",
+        "rasuvaeff/yii3-outbox-clickhouse": "^1.2",
+        "rasuvaeff/yii3-outbox-db": "^2.0",
         "rector/rector": "^2.4",
         "roave/backward-compatibility-check": "^8.0",
         "testo/bridge-infection": "^0.1.6",
         "testo/testo": "^0.10.25",
-        "vimeo/psalm": "^6.16"
+        "vimeo/psalm": "^6.16",
+        "yiisoft/cache": "^3.2",
+        "yiisoft/db": "^2.0",
+        "yiisoft/db-migration": "^2.0",
+        "yiisoft/db-sqlite": "^2.0",
+        "yiisoft/test-support": "^3.0"
     },
     "autoload": {
         "psr-4": {

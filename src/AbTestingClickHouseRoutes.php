@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3AbTestingOutbox;
 
 /**
- * Ready-made route map for `yii3-outbox-clickhouse`, so a consumer does not
- * hand-write it. Returns a plain array — this class adds no ClickHouse
- * dependency.
+ * Route map for `yii3-outbox-clickhouse` targeting the compatible v1 DDL in
+ * this package's `migrations/` directory. Returns a plain array — this class
+ * adds no ClickHouse dependency.
  *
  * The analytics columns mirror those owned by `yii3-ab-testing-clickhouse`
  * (the single source of truth). Two transport-meta columns precede them:
@@ -19,6 +19,10 @@ namespace Rasuvaeff\Yii3AbTestingOutbox;
  */
 final class AbTestingClickHouseRoutes
 {
+    public const string EXPOSURES_TABLE = 'ab_outbox_exposures';
+
+    public const string CONVERSIONS_TABLE = 'ab_outbox_conversions';
+
     /**
      * @param non-empty-string $exposuresTable
      * @param non-empty-string $conversionsTable
@@ -31,6 +35,13 @@ final class AbTestingClickHouseRoutes
         string $conversionsTable = 'ab_conversions',
         string $eventIdColumn = 'event_id',
     ): array {
+        // Keep the 1.2.3 signature defaults for reflection-level BC while
+        // making the normal zero-argument call target the shipped v1 schema.
+        if (\func_num_args() === 0) {
+            $exposuresTable = self::EXPOSURES_TABLE;
+            $conversionsTable = self::CONVERSIONS_TABLE;
+        }
+
         return [
             AbTestingOutboxEventType::Exposure->value => [
                 'table' => $exposuresTable,

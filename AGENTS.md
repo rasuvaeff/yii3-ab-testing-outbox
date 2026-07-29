@@ -21,9 +21,10 @@ belong downstream. It only serializes domain events into outbox messages.
 1. **Verification is mandatory.** Never claim "done" without a fresh green
    `composer build`. "Should work" does not count.
 2. **No suppressions.** No `@psalm-suppress`, no baseline. Fix the root cause.
-3. **Payload columns mirror the source of truth.** The analytics field names must
-   match the `COLUMNS` of `yii3-ab-testing-clickhouse` (the SoT). The
-   `ClickHouseRoutesContractTest` enforces it; update both together, never drift.
+3. **Routes and DDL are one contract.** Analytics field names must match the
+   `COLUMNS` of `yii3-ab-testing-clickhouse`, while transport fields and ordered
+   route columns must match this package's `migrations/`. Keep both contract
+   tests green; never repoint defaults to the direct sink tables.
 4. **Trackers are NOT flushable.** `Outbox::record()` persists immediately; there
    is no request-local buffer. Do not implement `FlushableTracker`.
 5. **Preserve the public contract.** Update README + tests with any API change.
@@ -67,13 +68,21 @@ make release-check
 `make test-coverage` and `make mutation` bootstrap `pcov` inside the
 `composer:2` container because the base image has no coverage driver.
 
-The `ClickHouseRoutesContractTest` only runs when `yii3-ab-testing-clickhouse` is
-also installed (it is not a dependency); otherwise it skips.
+The `ClickHouseRoutesContractTest` compares against the dev-installed
+`yii3-ab-testing-clickhouse`; do not make that check optional again. The durable
+pipeline integration is separate and always gets a live ClickHouse service in
+CI.
+- E2E dev dependencies pull `yiisoft/db-sqlite`, so every CI job needs
+  `mbstring`; the live integration job additionally needs `pdo_sqlite`.
 
 ## Invariants & gotchas
 
 - Message types are fixed `ab.exposure` / `ab.conversion`
   (`AbTestingOutboxEventType`).
+- Default ClickHouse tables are `ab_outbox_exposures` and
+  `ab_outbox_conversions`. Their placeholder-based DDL lives in `migrations/`
+  and uses `ReplacingMergeTree ORDER BY event_id`; direct sink tables have an
+  incompatible schema and must never be reused.
 - Boolean flags serialize as int `0|1`; `environment` is always present
   (`''` without context); conversion adds `goal` (non-empty, validated).
 - `event_at` (UTC `Y-m-d H:i:s`) is stamped from the injected `ClockInterface`
@@ -87,6 +96,9 @@ also installed (it is not a dependency); otherwise it skips.
   `yii3-ab-testing-clickhouse`) that also binds them is a `yiisoft/config`
   `Duplicate key` error — the app must compose them with
   `CompositeExposureTracker` / `CompositeConversionTracker` in its own config.
+- `tests/Integration/DurableClickHousePipelineTest` is the clean-install proof:
+  tracker -> SQLite `DbOutboxStorage` -> exporter -> live ClickHouse. CI must set
+  `CLICKHOUSE_HOST`, so this path cannot pass by skipping.
 - Code: `declare(strict_types=1)`, `final readonly class`, `#[\Override]`,
   explicit types.
 - **CI workflows are SHA-pinned.** Every `uses:` in `.github/workflows/*.yml`

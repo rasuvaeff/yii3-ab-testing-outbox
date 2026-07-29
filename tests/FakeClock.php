@@ -9,10 +9,10 @@ use Psr\Clock\ClockInterface;
 /**
  * @internal
  */
-final class FakeClock implements ClockInterface
+final readonly class FakeClock implements ClockInterface
 {
     public function __construct(
-        private readonly \DateTimeImmutable $now,
+        private \DateTimeImmutable $now,
     ) {}
 
     #[\Override]
