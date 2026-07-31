@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0 — 2026-08-01
 
 - Make aggregate-id generation injectable and use stable pseudonymous ids by
   default so raw `subject_id` is not duplicated into top-level outbox metadata.
