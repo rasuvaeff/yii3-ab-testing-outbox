@@ -28,6 +28,8 @@ final readonly class DefaultAbTestingOutboxMessageFactory implements AbTestingOu
 
     public function __construct(
         private ClockInterface $clock = new SystemClock(),
+        private AggregateIdStrategyInterface $aggregateIdStrategy = new PseudonymousAggregateIdStrategy(),
+        private AnalyticsContextPolicyInterface $contextPolicy = new AllowListAnalyticsContextPolicy(),
     ) {}
 
     #[\Override]
@@ -36,7 +38,7 @@ final readonly class DefaultAbTestingOutboxMessageFactory implements AbTestingOu
         return new AbTestingOutboxPayload(
             type: AbTestingOutboxEventType::Exposure->value,
             payload: $this->encode($this->baseFields($assignment)),
-            aggregateId: $assignment->experiment . ':' . $assignment->subjectId,
+            aggregateId: $this->aggregateIdStrategy->exposure($assignment),
         );
     }
 
@@ -53,12 +55,12 @@ final readonly class DefaultAbTestingOutboxMessageFactory implements AbTestingOu
         return new AbTestingOutboxPayload(
             type: AbTestingOutboxEventType::Conversion->value,
             payload: $this->encode($fields),
-            aggregateId: $assignment->experiment . ':' . $assignment->subjectId . ':' . $goal,
+            aggregateId: $this->aggregateIdStrategy->conversion($assignment, $goal),
         );
     }
 
     /**
-     * @return array<string, int|string>
+     * @return array<string, mixed>
      */
     private function baseFields(Assignment $assignment): array
     {
@@ -72,11 +74,12 @@ final readonly class DefaultAbTestingOutboxMessageFactory implements AbTestingOu
             'is_fallback' => (int) $assignment->isFallback,
             'is_sticky' => (int) $assignment->isSticky,
             'environment' => $assignment->context?->getEnvironment() ?? '',
+            'context' => $this->contextPolicy->apply($assignment->context),
         ];
     }
 
     /**
-     * @param array<string, int|string> $fields
+     * @param array<string, mixed> $fields
      */
     private function encode(array $fields): string
     {

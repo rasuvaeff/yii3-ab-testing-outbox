@@ -44,11 +44,23 @@ final class OutboxConversionTrackerTest
         Assert::count($pending, 1);
         Assert::same($pending[0]->getType(), 'ab.conversion');
         Assert::string($pending[0]->getPayload())->contains('"goal":"purchase"');
-        Assert::same($pending[0]->getAggregateId(), 'checkout:user-1:purchase');
+        Assert::true(is_string($pending[0]->getAggregateId()));
+        Assert::false(str_contains($pending[0]->getAggregateId(), 'user-1'));
     }
 
     public function isNotFlushable(): void
     {
         Assert::false($this->tracker instanceof FlushableTracker);
+    }
+
+    public function acceptsAStableDomainEventId(): void
+    {
+        $this->tracker->trackConversion(
+            new Assignment(experiment: 'checkout', variant: 'green', subjectId: 'user-1'),
+            goal: 'purchase',
+            eventId: 'conversion-order-42',
+        );
+
+        Assert::same($this->storage->findPending()[0]->getId(), 'conversion-order-42');
     }
 }

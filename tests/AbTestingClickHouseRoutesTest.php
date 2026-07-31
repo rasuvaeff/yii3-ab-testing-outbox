@@ -34,6 +34,8 @@ final class AbTestingClickHouseRoutesTest
 
         Assert::false(in_array('v', $map['ab.exposure']['columns'], true));
         Assert::false(in_array('v', $map['ab.conversion']['columns'], true));
+        Assert::false(in_array('context', $map['ab.exposure']['columns'], true));
+        Assert::false(in_array('context', $map['ab.conversion']['columns'], true));
     }
 
     public function honoursCustomTableAndColumnNames(): void

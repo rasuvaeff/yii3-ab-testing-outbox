@@ -2,7 +2,7 @@
 
 | Script | Shows | Needs server? |
 |---|---|---|
-| `basic-usage.php` | track exposure/conversion → durable outbox messages + the ClickHouse route map | No |
+| `basic-usage.php` | stable event ids, pseudonymous aggregates, filtered context, and ClickHouse routes | No |
 
 ## Running
 

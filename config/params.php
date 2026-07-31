@@ -3,5 +3,12 @@
 declare(strict_types=1);
 
 return [
-    'rasuvaeff/yii3-ab-testing-outbox' => [],
+    'rasuvaeff/yii3-ab-testing-outbox' => [
+        'aggregateIdSecret' => '',
+        'context' => [
+            'allowedAttributes' => [],
+            'renamedAttributes' => [],
+            'redactedAttributes' => [],
+        ],
+    ],
 ];

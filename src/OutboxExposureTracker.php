@@ -26,7 +26,7 @@ final readonly class OutboxExposureTracker implements ExposureTracker
     ) {}
 
     #[\Override]
-    public function trackExposure(Assignment $assignment): void
+    public function trackExposure(Assignment $assignment, ?string $eventId = null): void
     {
         $message = $this->messageFactory->exposure($assignment);
 
@@ -34,6 +34,7 @@ final readonly class OutboxExposureTracker implements ExposureTracker
             type: $message->type,
             payload: $message->payload,
             aggregateId: $message->aggregateId,
+            id: $eventId,
         );
     }
 }

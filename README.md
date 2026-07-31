@@ -57,9 +57,9 @@ $exposureTracker = new OutboxExposureTracker($outbox);
 $conversionTracker = new OutboxConversionTracker($outbox);
 
 $assignment = $abTesting->assign(experiment: 'checkout', subjectId: $userId);
-$exposureTracker->trackExposure($assignment);             // durable, no network call
+$exposureTracker->trackExposure($assignment, eventId: 'exposure-order-42');
 // later, on the goal:
-$conversionTracker->trackConversion($assignment, goal: 'purchase');
+$conversionTracker->trackConversion($assignment, goal: 'purchase', eventId: 'conversion-order-42');
 ```
 
 ### Payload
@@ -68,7 +68,7 @@ $conversionTracker->trackConversion($assignment, goal: 'purchase');
 match the analytics columns of `yii3-ab-testing-clickhouse`:
 
 ```json
-{"v":1,"event_at":"2026-06-12 10:00:00","experiment":"checkout","variant":"green","subject_id":"user-1","is_forced":0,"is_fallback":0,"is_sticky":0,"environment":"production"}
+{"v":1,"event_at":"2026-06-12 10:00:00","experiment":"checkout","variant":"green","subject_id":"user-1","is_forced":0,"is_fallback":0,"is_sticky":0,"environment":"production","context":{}}
 ```
 
 The leading `v` field is a transport-meta schema version (`DefaultAbTestingOutboxMessageFactory::PAYLOAD_VERSION`).
@@ -77,6 +77,45 @@ so downstream consumers reading raw outbox messages can detect payload schema ge
 Conversions add `"goal"`. Flags are `0|1`; `environment` is always present.
 `event_at` is the event time (UTC `Y-m-d H:i:s`) stamped when tracked — distinct
 from the worker's export time.
+
+`context` is the extensible v1 field for additional analytics dimensions. The
+default policy persists none. Configure `AllowListAnalyticsContextPolicy` to
+allow attributes explicitly, rename output keys, or replace selected values
+with `[redacted]`. Unknown attributes are always dropped. The current
+`AbTestingClickHouseRoutes` intentionally omit `context`, so adding dimensions
+does not change the existing v1 ClickHouse tables.
+
+Payload consumers must branch on `v` and accept every version advertised during
+a rollout. A v2 producer must use new event types/routes or a consumer that can
+read v1 and v2 concurrently; never reinterpret an existing v1 field in place.
+Keep v1 production until all consumers understand v2, dual-read during the
+migration window, then retire v1 explicitly.
+
+### Identity and retries
+
+The default `PseudonymousAggregateIdStrategy` emits stable HMAC-SHA-256 ids such
+as `exposure:<digest>` and never copies raw `subject_id` into the top-level
+outbox column. Inject an application secret to resist offline guessing, or
+implement `AggregateIdStrategyInterface` for a domain-specific grouping policy.
+
+The default config-plugin factory is configured through application params:
+
+```php
+'rasuvaeff/yii3-ab-testing-outbox' => [
+    'aggregateIdSecret' => $_ENV['AB_AGGREGATE_SECRET'],
+    'context' => [
+        'allowedAttributes' => ['country', 'plan', 'email'],
+        'renamedAttributes' => ['plan' => 'billing_plan'],
+        'redactedAttributes' => ['email'],
+    ],
+],
+```
+
+The optional `eventId` tracker argument is the stable domain event id passed to
+`Outbox::record(id: ...)`. Re-recording the same domain event therefore keeps the
+same outbox/ClickHouse `event_id`; omitting it preserves generated ids, so two
+tracker calls remain two distinct events. Storage must enforce whatever
+duplicate-id behavior your application requires.
 
 ### ClickHouse routing
 
@@ -135,25 +174,16 @@ return [
 
 ## Security
 
-- **`subject_id` is written to two places, not one.** It is a field inside the
-  JSON payload *and* a component of the outbox message's `aggregate_id`, which
-  is a top-level column of the outbox table:
-
-  | Message | `aggregate_id` |
-  |---|---|
-  | `ab.exposure` | `<experiment>:<subject_id>` |
-  | `ab.conversion` | `<experiment>:<subject_id>:<goal>` |
-
-  If `subject_id` is PII, so is that column. Anything that reads the outbox
-  table without parsing payloads — an admin screen listing messages by
-  aggregate, a log line, a metric label, a support export — exposes it. A
-  redaction or retention policy applied only to the payload misses it.
-
-- `subject_id` may be PII; this package never hashes it silently — privacy policy
-  is the application's. Hash or pseudonymise it **before** it reaches
-  `Assignment`, so that both the payload and the `aggregate_id` carry the same
-  safe value. Hashing at the sink is too late: the outbox row already holds the
-  original.
+- `subject_id` remains verbatim in the analytics JSON payload and may be PII.
+  Pseudonymous aggregate ids only reduce its footprint in top-level outbox
+  metadata; they do not anonymize the event. Pseudonymize before `Assignment`
+  when the analytics payload itself must not contain the original identifier.
+- Always inject a private aggregate-id secret in production. The empty-secret
+  default is deterministic and prevents accidental raw-value disclosure, but
+  does not resist dictionary attacks on predictable subject ids.
+- Context attributes are denied by default. Use a short allow-list, avoid
+  secrets and high-cardinality values, and redact before the payload reaches
+  outbox storage.
 - Payloads are JSON strings written through the outbox; `goal`/`experiment` are
   trusted analytics dimensions from your application.
 

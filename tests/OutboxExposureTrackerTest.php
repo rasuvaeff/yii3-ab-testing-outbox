@@ -41,11 +41,22 @@ final class OutboxExposureTrackerTest
         Assert::count($pending, 1);
         Assert::same($pending[0]->getType(), 'ab.exposure');
         Assert::string($pending[0]->getPayload())->contains('"experiment":"checkout"');
-        Assert::same($pending[0]->getAggregateId(), 'checkout:user-1');
+        Assert::true(is_string($pending[0]->getAggregateId()));
+        Assert::false(str_contains($pending[0]->getAggregateId(), 'user-1'));
     }
 
     public function isNotFlushable(): void
     {
         Assert::false($this->tracker instanceof FlushableTracker);
+    }
+
+    public function acceptsAStableDomainEventId(): void
+    {
+        $this->tracker->trackExposure(
+            new Assignment(experiment: 'checkout', variant: 'green', subjectId: 'user-1'),
+            eventId: 'exposure-order-42',
+        );
+
+        Assert::same($this->storage->findPending()[0]->getId(), 'exposure-order-42');
     }
 }
