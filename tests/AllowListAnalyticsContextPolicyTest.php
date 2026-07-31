@@ -64,6 +64,7 @@ final class AllowListAnalyticsContextPolicyTest
     public static function invalidConfigurationProvider(): iterable
     {
         yield 'invalid source identifier' => [['bad-name'], [], []];
+        yield 'invalid source identifier renamed to a valid one' => [['bad-name'], ['bad-name' => 'good_name'], []];
         yield 'invalid destination identifier' => [['country'], ['country' => 'bad-name'], []];
         yield 'rename outside allow-list' => [['country'], ['plan' => 'billing_plan'], []];
         yield 'redaction outside allow-list' => [['country'], [], ['email']];

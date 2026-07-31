@@ -34,7 +34,7 @@ final readonly class AllowListAnalyticsContextPolicy implements AnalyticsContext
             $destination = $renamedAttributes[$attribute] ?? $attribute;
             $this->assertIdentifier($destination);
 
-            if (isset($destinations[$destination])) {
+            if ($destinations[$destination] ?? false) {
                 throw new InvalidArgumentException(sprintf('Duplicate analytics context field "%s"', $destination));
             }
 

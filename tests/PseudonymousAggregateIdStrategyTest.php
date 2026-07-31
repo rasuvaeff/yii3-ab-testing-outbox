@@ -36,4 +36,23 @@ final class PseudonymousAggregateIdStrategyTest
         Assert::false($strategy->exposure($assignment) === $strategy->conversion($assignment, 'purchase'));
         Assert::false($strategy->conversion($assignment, 'purchase') === $strategy->conversion($assignment, 'signup'));
     }
+
+    public function idsCarryTheEventKindAsALeadingPrefix(): void
+    {
+        $strategy = new PseudonymousAggregateIdStrategy();
+        $assignment = new Assignment(experiment: 'checkout', variant: 'a', subjectId: 'user-1');
+
+        Assert::same(substr($strategy->exposure($assignment), 0, 9), 'exposure:');
+        Assert::same(substr($strategy->conversion($assignment, 'purchase'), 0, 11), 'conversion:');
+    }
+
+    public function differentExperimentsNeverShareAnId(): void
+    {
+        $strategy = new PseudonymousAggregateIdStrategy();
+        $checkout = new Assignment(experiment: 'checkout', variant: 'a', subjectId: 'user-1');
+        $pricing = new Assignment(experiment: 'pricing', variant: 'a', subjectId: 'user-1');
+
+        Assert::false($strategy->exposure($checkout) === $strategy->exposure($pricing));
+        Assert::false($strategy->conversion($checkout, 'purchase') === $strategy->conversion($pricing, 'purchase'));
+    }
 }
