@@ -6,6 +6,7 @@ namespace Rasuvaeff\Yii3AbTestingOutbox\Tests\Integration;
 
 use Rasuvaeff\Yii3AbTesting\ConversionTracker;
 use Rasuvaeff\Yii3AbTesting\ExposureTracker;
+use Rasuvaeff\Yii3AbTestingOutbox\AbTestingOutboxMessageFactoryInterface;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxConversionTracker;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxExposureTracker;
 use Rasuvaeff\Yii3AbTestingOutbox\Tests\FakeClock;
@@ -25,11 +26,11 @@ use Testo\Test;
 #[CoversNothing]
 final class ConfigWiringTest
 {
-    public function bindsOnlyTheTrackerKeys(): void
+    public function bindsFactoryAndTrackerKeys(): void
     {
         Assert::same(
             array_keys($this->loadDi()),
-            [ExposureTracker::class, ConversionTracker::class],
+            [AbTestingOutboxMessageFactoryInterface::class, ExposureTracker::class, ConversionTracker::class],
         );
     }
 
@@ -38,7 +39,7 @@ final class ConfigWiringTest
         $factory = $this->loadDi()[ExposureTracker::class];
         Assert::true(is_callable($factory));
 
-        Assert::instanceOf($factory($this->outbox()), OutboxExposureTracker::class);
+        Assert::instanceOf($factory($this->outbox(), $this->messageFactory()), OutboxExposureTracker::class);
     }
 
     public function conversionFactoryBuildsOutboxTracker(): void
@@ -46,7 +47,7 @@ final class ConfigWiringTest
         $factory = $this->loadDi()[ConversionTracker::class];
         Assert::true(is_callable($factory));
 
-        Assert::instanceOf($factory($this->outbox()), OutboxConversionTracker::class);
+        Assert::instanceOf($factory($this->outbox(), $this->messageFactory()), OutboxConversionTracker::class);
     }
 
     public function coreAndProducerDoNotShareDiKeys(): void
@@ -61,7 +62,11 @@ final class ConfigWiringTest
      */
     private function loadDi(): array
     {
-        return require dirname(__DIR__, 2) . '/config/di.php';
+        return (static function (): array {
+            $params = require dirname(__DIR__, 2) . '/config/params.php';
+
+            return require dirname(__DIR__, 2) . '/config/di.php';
+        })();
     }
 
     /**
@@ -83,5 +88,12 @@ final class ConfigWiringTest
     private function outbox(): Outbox
     {
         return new Outbox(storage: new InMemoryStorage(), clock: new FakeClock(new \DateTimeImmutable('2026-06-11 12:00:00')));
+    }
+
+    private function messageFactory(): AbTestingOutboxMessageFactoryInterface
+    {
+        $factory = $this->loadDi()[AbTestingOutboxMessageFactoryInterface::class];
+
+        return $factory();
     }
 }

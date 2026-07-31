@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Make aggregate-id generation injectable and use stable pseudonymous ids by
+  default so raw `subject_id` is not duplicated into top-level outbox metadata.
+- Accept an optional stable domain `eventId` in both trackers and forward it to
+  the outbox message id for retry/dedup identity.
+- Add an allow-list context policy with rename and redaction rules. The filtered
+  object is stored in the extensible v1 `context` payload field and remains
+  outside existing ClickHouse v1 routes.
+- Document the required v1/v2 coexistence and consumer rollout policy.
+
 ## 1.2.4 — 2026-07-29
 
 - Ship compatible ClickHouse v1 DDL for the outbox routes, using

@@ -28,9 +28,15 @@ make mutation
   `DefaultAbTestingOutboxMessageFactory::PAYLOAD_VERSION`); NOT a ClickHouse column.
 - Payload field names match the analytics columns of `yii3-ab-testing-clickhouse`
   (source of truth); flags are int `0|1`; `environment` always present;
-  conversion adds non-empty `goal`.
-- Aggregate id: `experiment:subject_id` / `experiment:subject_id:goal` (diagnostics
-  only, not a ClickHouse column).
+  conversion adds non-empty `goal`. Extensible `context` is a policy-filtered
+  object and is intentionally not part of the v1 ClickHouse route.
+- Default aggregate ids are pseudonymous `exposure:<digest>` /
+  `conversion:<digest>`. Inject a secret into `PseudonymousAggregateIdStrategy`
+  in production or replace `AggregateIdStrategyInterface`.
+- Tracker methods accept optional `eventId`; it is passed to
+  `Outbox::record(id: ...)` for stable retry identity. Omitted ids are generated.
+- Consumers branch on payload `v`. During a future v2 rollout, keep v1 and v2
+  consumers/routes side by side; never reinterpret v1 fields in place.
 - One-source rule: binds `ExposureTracker` + `ConversionTracker`; do not install
   next to another tracker backend without an app-side `Composite*Tracker`.
 - `migrations/` contains the compatible outbox ClickHouse v1 schema. Defaults
@@ -52,8 +58,8 @@ $outbox = new Outbox(storage: $storage, clock: $clock);
 $exposure = new OutboxExposureTracker($outbox);
 $conversion = new OutboxConversionTracker($outbox);
 
-$exposure->trackExposure($assignment);
-$conversion->trackConversion($assignment, goal: 'purchase');
+$exposure->trackExposure($assignment, eventId: 'exposure-order-42');
+$conversion->trackConversion($assignment, goal: 'purchase', eventId: 'conversion-order-42');
 
 // route map for the shipped ClickHouse DDL (leading event_id for dedup):
 $routes = AbTestingClickHouseRoutes::map();
@@ -71,7 +77,25 @@ Custom serialization: implement `AbTestingOutboxMessageFactoryInterface`
 ## Exposure payload
 
 ```json
-{"v":1,"event_at":"2026-06-12 10:00:00","experiment":"checkout","variant":"green","subject_id":"user-1","is_forced":0,"is_fallback":0,"is_sticky":0,"environment":"production"}
+{"v":1,"event_at":"2026-06-12 10:00:00","experiment":"checkout","variant":"green","subject_id":"user-1","is_forced":0,"is_fallback":0,"is_sticky":0,"environment":"production","context":{}}
 ```
 
 Conversion adds `"goal":"purchase"`. `v` is transport-meta only — not exported to ClickHouse.
+
+## Context policy
+
+```php
+$policy = new AllowListAnalyticsContextPolicy(
+    allowedAttributes: ['country', 'email'],
+    renamedAttributes: ['country' => 'market'],
+    redactedAttributes: ['email'],
+);
+$factory = new DefaultAbTestingOutboxMessageFactory(
+    aggregateIdStrategy: new PseudonymousAggregateIdStrategy(secret: $appSecret),
+    contextPolicy: $policy,
+);
+```
+
+The config-plugin accepts the same policy through
+`rasuvaeff/yii3-ab-testing-outbox.aggregateIdSecret` and `context` keys
+(`allowedAttributes`, `renamedAttributes`, `redactedAttributes`).

@@ -23,7 +23,7 @@ final readonly class OutboxConversionTracker implements ConversionTracker
     ) {}
 
     #[\Override]
-    public function trackConversion(Assignment $assignment, string $goal): void
+    public function trackConversion(Assignment $assignment, string $goal, ?string $eventId = null): void
     {
         $message = $this->messageFactory->conversion($assignment, $goal);
 
@@ -31,6 +31,7 @@ final readonly class OutboxConversionTracker implements ConversionTracker
             type: $message->type,
             payload: $message->payload,
             aggregateId: $message->aggregateId,
+            id: $eventId,
         );
     }
 }

@@ -38,7 +38,8 @@ final class DefaultAbTestingOutboxMessageFactoryTest
         ));
 
         Assert::same($payload->type, 'ab.exposure');
-        Assert::same($payload->aggregateId, 'checkout:user-1');
+        Assert::true(is_string($payload->aggregateId));
+        Assert::false(str_contains($payload->aggregateId, 'user-1'));
         Assert::same($this->decode($payload->payload), [
             'v' => 1,
             'event_at' => '2026-06-12 10:00:00',
@@ -49,6 +50,7 @@ final class DefaultAbTestingOutboxMessageFactoryTest
             'is_fallback' => 0,
             'is_sticky' => 0,
             'environment' => 'production',
+            'context' => [],
         ]);
     }
 
@@ -60,7 +62,8 @@ final class DefaultAbTestingOutboxMessageFactoryTest
         );
 
         Assert::same($payload->type, 'ab.conversion');
-        Assert::same($payload->aggregateId, 'checkout:user-1:purchase');
+        Assert::true(is_string($payload->aggregateId));
+        Assert::false(str_contains($payload->aggregateId, 'user-1'));
         Assert::same($this->decode($payload->payload), [
             'v' => 1,
             'event_at' => '2026-06-12 10:00:00',
@@ -71,6 +74,7 @@ final class DefaultAbTestingOutboxMessageFactoryTest
             'is_fallback' => 0,
             'is_sticky' => 0,
             'environment' => '',
+            'context' => [],
             'goal' => 'purchase',
         ]);
     }
@@ -117,6 +121,34 @@ final class DefaultAbTestingOutboxMessageFactoryTest
         $fields = $this->decode($payload->payload);
         Assert::same($fields['v'], 1);
         Assert::same(array_key_first($fields), 'v');
+    }
+
+    public function serializesOnlyContextAllowedByThePolicy(): void
+    {
+        $factory = new DefaultAbTestingOutboxMessageFactory(
+            clock: new FakeClock(new \DateTimeImmutable('2026-06-12 10:00:00')),
+            contextPolicy: new \Rasuvaeff\Yii3AbTestingOutbox\AllowListAnalyticsContextPolicy(
+                allowedAttributes: ['country', 'email'],
+                renamedAttributes: ['country' => 'market'],
+                redactedAttributes: ['email'],
+            ),
+        );
+        $context = AssignmentContext::empty()
+            ->withAttribute('country', 'DE')
+            ->withAttribute('email', 'person@example.com')
+            ->withAttribute('internal_note', 'secret');
+
+        $payload = $factory->exposure(new Assignment(
+            experiment: 'e',
+            variant: 'a',
+            subjectId: 'u',
+            context: $context,
+        ));
+
+        Assert::same($this->decode($payload->payload)['context'], [
+            'market' => 'DE',
+            'email' => '[redacted]',
+        ]);
     }
 
     public function rejectsEmptyConversionGoal(): void

@@ -60,9 +60,9 @@ $exposureTracker = new OutboxExposureTracker($outbox);
 $conversionTracker = new OutboxConversionTracker($outbox);
 
 $assignment = $abTesting->assign(experiment: 'checkout', subjectId: $userId);
-$exposureTracker->trackExposure($assignment);             // durable, no network call
+$exposureTracker->trackExposure($assignment, eventId: 'exposure-order-42');
 // later, on the goal:
-$conversionTracker->trackConversion($assignment, goal: 'purchase');
+$conversionTracker->trackConversion($assignment, goal: 'purchase', eventId: 'conversion-order-42');
 ```
 
 ### Payload
@@ -71,7 +71,7 @@ $conversionTracker->trackConversion($assignment, goal: 'purchase');
 которого совпадают с аналитическими колонками `yii3-ab-testing-clickhouse`:
 
 ```json
-{"v":1,"event_at":"2026-06-12 10:00:00","experiment":"checkout","variant":"green","subject_id":"user-1","is_forced":0,"is_fallback":0,"is_sticky":0,"environment":"production"}
+{"v":1,"event_at":"2026-06-12 10:00:00","experiment":"checkout","variant":"green","subject_id":"user-1","is_forced":0,"is_fallback":0,"is_sticky":0,"environment":"production","context":{}}
 ```
 
 Ведущее поле `v` — это версия схемы transport-meta
@@ -82,6 +82,46 @@ $conversionTracker->trackConversion($assignment, goal: 'purchase');
 имеют значения `0|1`; `environment` присутствует всегда. `event_at` — время
 события (UTC `Y-m-d H:i:s`), фиксируемое при трекинге; оно отличается от времени
 экспорта воркером.
+
+`context` — расширяемое поле v1 для дополнительных аналитических dimensions. По
+умолчанию политика не сохраняет ни одного атрибута. Настройте
+`AllowListAnalyticsContextPolicy`, чтобы явно разрешить атрибуты, переименовать
+выходные ключи или заменить выбранные значения на `[redacted]`. Неизвестные
+атрибуты всегда отбрасываются. Текущие `AbTestingClickHouseRoutes` намеренно не
+содержат `context`, поэтому dimensions не меняют существующие ClickHouse v1
+таблицы.
+
+Consumer обязан ветвиться по `v` и в период rollout принимать все заявленные
+версии. Producer v2 должен использовать новые event types/routes либо consumer,
+который одновременно читает v1 и v2; переопределять смысл существующего поля v1
+нельзя. Сохраняйте v1, пока все consumer'ы не понимают v2, используйте dual-read
+на время миграции и отключайте v1 явно.
+
+### Идентичность и повторы
+
+Стандартный `PseudonymousAggregateIdStrategy` выдаёт стабильные HMAC-SHA-256 id
+вида `exposure:<digest>` и не копирует raw `subject_id` в top-level колонку
+outbox. Передайте секрет приложения для защиты от offline-перебора либо
+реализуйте `AggregateIdStrategyInterface` для своей политики группировки.
+
+Стандартная config-plugin factory настраивается через params приложения:
+
+```php
+'rasuvaeff/yii3-ab-testing-outbox' => [
+    'aggregateIdSecret' => $_ENV['AB_AGGREGATE_SECRET'],
+    'context' => [
+        'allowedAttributes' => ['country', 'plan', 'email'],
+        'renamedAttributes' => ['plan' => 'billing_plan'],
+        'redactedAttributes' => ['email'],
+    ],
+],
+```
+
+Необязательный tracker-аргумент `eventId` передаёт стабильный domain event id в
+`Outbox::record(id: ...)`. Повторная запись того же domain event сохраняет тот же
+outbox/ClickHouse `event_id`; без него id генерируется и два вызова tracker'а
+остаются двумя разными событиями. Нужное поведение duplicate id должно
+обеспечивать выбранное storage приложения.
 
 ### Маршрутизация ClickHouse
 
@@ -142,25 +182,16 @@ return [
 
 ## Безопасность
 
-- **`subject_id` пишется в два места, а не в одно.** Это поле внутри JSON-payload
-  *и* составная часть `aggregate_id` outbox-сообщения, а `aggregate_id` — это
-  отдельная top-level колонка таблицы outbox:
-
-  | Сообщение | `aggregate_id` |
-  |---|---|
-  | `ab.exposure` | `<experiment>:<subject_id>` |
-  | `ab.conversion` | `<experiment>:<subject_id>:<goal>` |
-
-  Если `subject_id` — PII, то и эта колонка тоже. Всё, что читает таблицу outbox
-  не разбирая payload'ы — админка со списком сообщений по агрегату, строка лога,
-  метка метрики, выгрузка для поддержки — раскрывает его. Политика редактирования
-  или хранения, применённая только к payload, это место пропустит.
-
-- `subject_id` может быть PII; пакет никогда не хэширует его сам —
-  privacy-политика остаётся ответственностью приложения. Хэшируйте или
-  псевдонимизируйте **до** того, как значение попадёт в `Assignment`, — тогда и
-  payload, и `aggregate_id` понесут одно и то же безопасное значение. Хэшировать
-  на стороне приёмника поздно: в строке outbox уже лежит оригинал.
+- `subject_id` остаётся в analytics JSON payload как есть и может быть PII.
+  Псевдонимный aggregate id только уменьшает его присутствие в top-level
+  метаданных outbox, но не анонимизирует событие. Псевдонимизируйте значение до
+  `Assignment`, если payload не должен содержать исходный идентификатор.
+- В production всегда передавайте приватный aggregate-id secret. Стандартное
+  пустое значение детерминировано и предотвращает случайную публикацию raw id,
+  но не защищает предсказуемые subject id от словарного перебора.
+- Атрибуты context запрещены по умолчанию. Используйте короткий allow-list,
+  исключите секреты и высококардинальные значения, редактируйте их до записи в
+  outbox storage.
 - Payload'ы — это JSON-строки, записанные через outbox; `goal`/`experiment` —
   доверенные аналитические размерности из вашего приложения.
 

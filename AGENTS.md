@@ -12,6 +12,8 @@ events into durable `yii3-outbox` messages. A worker (with
 Public API: `OutboxExposureTracker`, `OutboxConversionTracker`,
 `AbTestingOutboxMessageFactoryInterface` + `DefaultAbTestingOutboxMessageFactory`,
 `AbTestingOutboxPayload`, `AbTestingOutboxEventType`, `AbTestingClickHouseRoutes`.
+Aggregate and context extension points are `AggregateIdStrategyInterface` and
+`AnalyticsContextPolicyInterface`.
 
 It does NOT export to ClickHouse, read the outbox, run a worker, or batch — those
 belong downstream. It only serializes domain events into outbox messages.
@@ -88,9 +90,19 @@ CI.
 - `event_at` (UTC `Y-m-d H:i:s`) is stamped from the injected `ClockInterface`
   (default `SystemClock`) at track time — the event time, not the export time. It
   and `event_id` are transport-meta route columns excluded from the SoT contract.
-- Aggregate id: `experiment:subject_id` (exposure),
-  `experiment:subject_id:goal` (conversion) — diagnostics only, not part of the
-  ClickHouse schema.
+- Aggregate ids are pseudonymous by default and must never contain raw
+  `subject_id`. Inject a private secret in production or a custom
+  `AggregateIdStrategyInterface`.
+- `context` is an extensible v1 JSON object governed by an explicit allow-list,
+  rename, and redaction policy. It must stay outside the existing ClickHouse v1
+  route columns. Unknown attributes are dropped.
+- `config/di.php` builds one message factory from `aggregateIdSecret` and
+  `context` params and injects it into both trackers. Keep both event kinds on
+  the same policy.
+- Optional tracker `eventId` is the domain event identity forwarded to
+  `Outbox::record(id: ...)`; omit it only when every call is a distinct event.
+- Payload v1 and v2 must coexist under version-aware consumers during rollout.
+  Never change v1 field meaning or point v1 routes at an incompatible schema.
 - One-source rule: `config/di.php` binds `ExposureTracker` + `ConversionTracker`.
   Installing this alongside another tracker backend (e.g.
   `yii3-ab-testing-clickhouse`) that also binds them is a `yiisoft/config`
