@@ -9,12 +9,12 @@ use Rasuvaeff\Yii3AbTesting\ExposureTracker;
 use Rasuvaeff\Yii3AbTestingOutbox\AbTestingOutboxMessageFactoryInterface;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxConversionTracker;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxExposureTracker;
-use Rasuvaeff\Yii3AbTestingOutbox\Tests\FakeClock;
 use Rasuvaeff\Yii3Outbox\InMemoryStorage;
 use Rasuvaeff\Yii3Outbox\Outbox;
 use Testo\Assert;
 use Testo\Codecov\CoversNothing;
 use Testo\Test;
+use Yiisoft\Test\Support\Clock\StaticClock;
 
 /**
  * Exercises the package `config/di.php`, covered by neither cs, psalm nor the
@@ -87,7 +87,7 @@ final class ConfigWiringTest
 
     private function outbox(): Outbox
     {
-        return new Outbox(storage: new InMemoryStorage(), clock: new FakeClock(new \DateTimeImmutable('2026-06-11 12:00:00')));
+        return new Outbox(storage: new InMemoryStorage(), clock: new StaticClock(new \DateTimeImmutable('2026-06-11 12:00:00')));
     }
 
     private function messageFactory(): AbTestingOutboxMessageFactoryInterface

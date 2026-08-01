@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3AbTestingOutbox\Benchmarks;
 
-use Rasuvaeff\Yii3AbTesting\Assignment;
+use DateTimeImmutable;
+use DateTimeZone;
+use Rasuvaeff\Yii3AbTesting\AssignmentSource;
+use Rasuvaeff\Yii3AbTesting\ConversionEvent;
+use Rasuvaeff\Yii3AbTesting\DecisionReason;
+use Rasuvaeff\Yii3AbTesting\ExposureEvent;
 use Rasuvaeff\Yii3AbTestingOutbox\AbTestingOutboxPayload;
 use Rasuvaeff\Yii3AbTestingOutbox\DefaultAbTestingOutboxMessageFactory;
-use Rasuvaeff\Yii3AbTestingOutbox\SystemClock;
 use Testo\Bench;
 
 final class AdapterBench
@@ -21,25 +25,33 @@ final class AdapterBench
     )]
     public static function buildExposure(): AbTestingOutboxPayload
     {
-        $factory = new DefaultAbTestingOutboxMessageFactory(clock: new SystemClock());
-        $assignment = new Assignment(
+        return (new DefaultAbTestingOutboxMessageFactory())->exposure(new ExposureEvent(
+            eventId: 'exposure-1',
+            occurredAt: self::time(),
             experiment: 'checkout-button',
             variant: 'treatment',
             subjectId: 'user-42',
-        );
-
-        return $factory->exposure(assignment: $assignment);
+            reason: DecisionReason::Assigned,
+            source: AssignmentSource::Computed,
+        ));
     }
 
     public static function buildConversion(): AbTestingOutboxPayload
     {
-        $factory = new DefaultAbTestingOutboxMessageFactory(clock: new SystemClock());
-        $assignment = new Assignment(
+        return (new DefaultAbTestingOutboxMessageFactory())->conversion(new ConversionEvent(
+            eventId: 'conversion-1',
+            occurredAt: self::time(),
             experiment: 'checkout-button',
             variant: 'treatment',
             subjectId: 'user-42',
-        );
+            goal: 'purchase',
+            reason: DecisionReason::Assigned,
+            source: AssignmentSource::Computed,
+        ));
+    }
 
-        return $factory->conversion(assignment: $assignment, goal: 'purchase');
+    private static function time(): DateTimeImmutable
+    {
+        return new DateTimeImmutable('2026-08-01 10:00:00.123', new DateTimeZone('UTC'));
     }
 }

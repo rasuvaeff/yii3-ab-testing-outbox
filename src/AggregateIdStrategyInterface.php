@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3AbTestingOutbox;
 
-use Rasuvaeff\Yii3AbTesting\Assignment;
+use Rasuvaeff\Yii3AbTesting\ConversionEvent;
+use Rasuvaeff\Yii3AbTesting\ExposureEvent;
 
 /**
  * Builds diagnostic outbox aggregate ids independently from analytics payloads.
@@ -13,7 +14,7 @@ use Rasuvaeff\Yii3AbTesting\Assignment;
  */
 interface AggregateIdStrategyInterface
 {
-    public function exposure(Assignment $assignment): ?string;
+    public function exposure(ExposureEvent $event): ?string;
 
-    public function conversion(Assignment $assignment, string $goal): ?string;
+    public function conversion(ConversionEvent $event): ?string;
 }

@@ -5,7 +5,6 @@ declare(strict_types=1);
 use Rasuvaeff\Yii3AbTesting\ConversionTracker;
 use Rasuvaeff\Yii3AbTesting\ExposureTracker;
 use Rasuvaeff\Yii3AbTestingOutbox\AbTestingOutboxMessageFactoryInterface;
-use Rasuvaeff\Yii3AbTestingOutbox\AllowListAnalyticsContextPolicy;
 use Rasuvaeff\Yii3AbTestingOutbox\DefaultAbTestingOutboxMessageFactory;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxConversionTracker;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxExposureTracker;
@@ -17,16 +16,14 @@ use Rasuvaeff\Yii3Outbox\Outbox;
 return [
     AbTestingOutboxMessageFactoryInterface::class => static function () use ($params): AbTestingOutboxMessageFactoryInterface {
         $config = $params['rasuvaeff/yii3-ab-testing-outbox'] ?? [];
-        $context = $config['context'] ?? [];
 
+        // The context allow-list moved to the core in 2.0: it is applied once,
+        // when the facade builds the event, so every delivery path filters
+        // identically. Configuring it here would have applied it to the durable
+        // path only.
         return new DefaultAbTestingOutboxMessageFactory(
             aggregateIdStrategy: new PseudonymousAggregateIdStrategy(
                 secret: (string) ($config['aggregateIdSecret'] ?? ''),
-            ),
-            contextPolicy: new AllowListAnalyticsContextPolicy(
-                allowedAttributes: $context['allowedAttributes'] ?? [],
-                renamedAttributes: $context['renamedAttributes'] ?? [],
-                redactedAttributes: $context['redactedAttributes'] ?? [],
             ),
         );
     },

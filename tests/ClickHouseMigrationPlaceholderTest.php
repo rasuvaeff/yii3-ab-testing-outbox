@@ -9,6 +9,13 @@ use Testo\Assert;
 use Testo\Codecov\CoversNothing;
 use Testo\Test;
 
+/**
+ * The DDL shipped in `migrations/` creates the **v1** outbox tables. Since 2.0
+ * they exist only so `legacyV1Map()` can drain messages queued before the
+ * upgrade; the v2 tables are owned by `yii3-ab-testing-clickhouse`. This test
+ * pins the shipped files to the legacy routes, which is the pair that still has
+ * to agree.
+ */
 #[Test]
 #[CoversNothing]
 final class ClickHouseMigrationPlaceholderTest
@@ -23,14 +30,16 @@ final class ClickHouseMigrationPlaceholderTest
 
     public function defaultsResolveToTablesDistinctFromDirectSink(): void
     {
+        $routes = AbTestingClickHouseRoutes::legacyV1Map();
+
         $exposures = str_replace(
             '{{outbox_exposures_table}}',
-            AbTestingClickHouseRoutes::EXPOSURES_TABLE,
+            $routes['ab.exposure']['table'],
             $this->read('0001_create_ab_outbox_exposures.sql'),
         );
         $conversions = str_replace(
             '{{outbox_conversions_table}}',
-            AbTestingClickHouseRoutes::CONVERSIONS_TABLE,
+            $routes['ab.conversion']['table'],
             $this->read('0002_create_ab_outbox_conversions.sql'),
         );
 
@@ -42,7 +51,7 @@ final class ClickHouseMigrationPlaceholderTest
 
     public function ddlProvidesRouteColumnsAndEventIdDeduplication(): void
     {
-        foreach (AbTestingClickHouseRoutes::map() as $type => $route) {
+        foreach (AbTestingClickHouseRoutes::legacyV1Map() as $type => $route) {
             $file = $type === 'ab.exposure'
                 ? '0001_create_ab_outbox_exposures.sql'
                 : '0002_create_ab_outbox_conversions.sql';
@@ -54,6 +63,20 @@ final class ClickHouseMigrationPlaceholderTest
 
             Assert::string($sql)->contains('ENGINE = ReplacingMergeTree');
             Assert::string($sql)->contains('ORDER BY event_id');
+        }
+    }
+
+    /**
+     * The v2 tables are created by `yii3-ab-testing-clickhouse`, so nothing
+     * here may claim them: two packages shipping DDL for one table is how the
+     * route map and the migration came to disagree in the first place.
+     */
+    public function shippedDdlDoesNotClaimTheV2Tables(): void
+    {
+        foreach (AbTestingClickHouseRoutes::map() as $route) {
+            foreach (['0001_create_ab_outbox_exposures.sql', '0002_create_ab_outbox_conversions.sql'] as $file) {
+                Assert::false(str_contains($this->read($file), $route['table']));
+            }
         }
     }
 

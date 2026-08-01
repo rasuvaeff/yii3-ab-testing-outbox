@@ -4,60 +4,72 @@ declare(strict_types=1);
 
 require __DIR__ . '/../vendor/autoload.php';
 
-use Psr\Clock\ClockInterface;
-use Rasuvaeff\Yii3AbTesting\Assignment;
+use Rasuvaeff\Yii3AbTesting\AbTesting;
+use Rasuvaeff\Yii3AbTesting\AllowListAnalyticsContextPolicy;
 use Rasuvaeff\Yii3AbTesting\AssignmentContext;
+use Rasuvaeff\Yii3AbTesting\ConfigExperimentProvider;
+use Rasuvaeff\Yii3AbTesting\SystemClock;
+use Rasuvaeff\Yii3AbTesting\WeightedHashAssignmentStrategy;
 use Rasuvaeff\Yii3AbTestingOutbox\AbTestingClickHouseRoutes;
-use Rasuvaeff\Yii3AbTestingOutbox\AllowListAnalyticsContextPolicy;
-use Rasuvaeff\Yii3AbTestingOutbox\DefaultAbTestingOutboxMessageFactory;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxConversionTracker;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxExposureTracker;
-use Rasuvaeff\Yii3AbTestingOutbox\PseudonymousAggregateIdStrategy;
 use Rasuvaeff\Yii3Outbox\InMemoryStorage;
 use Rasuvaeff\Yii3Outbox\Outbox;
 
-$clock = new class implements ClockInterface {
-    public function now(): DateTimeImmutable
-    {
-        return new DateTimeImmutable('2026-06-11 12:00:00');
-    }
-};
-
+/**
+ * The durable delivery path: the request writes a row to the outbox and
+ * returns. A worker exports it to ClickHouse later, so an analytics outage
+ * cannot touch the user's request.
+ *
+ * In-memory storage keeps this runnable; production uses `yii3-outbox-db`.
+ */
 $storage = new InMemoryStorage();
-$outbox = new Outbox(storage: $storage, clock: $clock);
+$outbox = new Outbox(storage: $storage, clock: new SystemClock());
 
-$messageFactory = new DefaultAbTestingOutboxMessageFactory(
-    clock: $clock,
-    aggregateIdStrategy: new PseudonymousAggregateIdStrategy(secret: 'example-secret-from-env'),
-    contextPolicy: new AllowListAnalyticsContextPolicy(
-        allowedAttributes: ['country', 'email'],
-        renamedAttributes: ['country' => 'market'],
-        redactedAttributes: ['email'],
-    ),
-);
-$exposureTracker = new OutboxExposureTracker($outbox, $messageFactory);
-$conversionTracker = new OutboxConversionTracker($outbox, $messageFactory);
-
-$assignment = new Assignment(
-    experiment: 'checkout',
-    variant: 'green',
-    subjectId: 'user-1',
-    context: AssignmentContext::forEnvironment('production')
-        ->withAttribute('country', 'DE')
-        ->withAttribute('email', 'person@example.com')
-        ->withAttribute('debug', true),
+$ab = new AbTesting(
+    provider: new ConfigExperimentProvider(config: [
+        'checkout' => [
+            'enabled' => true,
+            'salt' => 'checkout-v1',
+            'fallbackVariant' => 'control',
+            'variants' => ['control' => 50, 'green' => 50],
+        ],
+    ]),
+    strategy: new WeightedHashAssignmentStrategy(),
+    exposureTracker: new OutboxExposureTracker($outbox),
+    conversionTracker: new OutboxConversionTracker($outbox),
+    // The allow-list lives on the facade, so every delivery path filters
+    // identically. Configured per-adapter it would have covered this one only.
+    contextPolicy: new AllowListAnalyticsContextPolicy(allowedAttributes: ['country']),
 );
 
-echo "1. Track exposure + conversion (durably recorded, no analytics call):\n";
-$exposureTracker->trackExposure($assignment, eventId: 'exposure-order-42');
-$conversionTracker->trackConversion($assignment, goal: 'purchase', eventId: 'conversion-order-42');
+$context = AssignmentContext::forEnvironment('production')
+    ->withAttribute('country', 'RU')
+    ->withAttribute('email', 'never@leaves.local');
 
-echo "2. Pending outbox messages:\n";
+$assignment = $ab->assign(experiment: 'checkout', subjectId: 'user-1', context: $context);
+$exposure = $ab->trackExposure($assignment);
+$ab->trackConversion($assignment, goal: 'purchase', exposure: $exposure);
+
+echo "Queued outbox messages:\n\n";
+
 foreach ($storage->findPending() as $message) {
-    echo "   {$message->getType()} [{$message->getAggregateId()}] -> {$message->getPayload()}\n";
+    echo sprintf("  %s\n", $message->getType());
+    echo sprintf("    id:        %s\n", $message->getId());
+    echo sprintf("    aggregate: %s\n", (string) $message->getAggregateId());
+    echo sprintf("    payload:   %s\n\n", $message->getPayload());
 }
 
-echo "3. Route map for yii3-outbox-clickhouse:\n";
-foreach (AbTestingClickHouseRoutes::map() as $type => $route) {
-    echo "   {$type} -> {$route['table']} (" . implode(', ', $route['columns']) . ")\n";
-}
+echo "Note three things in the payload:\n";
+echo "  - `event_id` equals the message id, so a retry of the same domain\n";
+echo "    event stays one row rather than two that never deduplicate;\n";
+echo "  - `email` is absent — the allow-list dropped it;\n";
+echo "  - `dimensions` is a JSON string, because the exporter refuses nested\n";
+echo "    payload fields.\n";
+
+echo "\nThe worker routes them with:\n";
+echo "  new MapClickHouseMessageRouter(routes: AbTestingClickHouseRoutes::map());\n";
+echo "  target tables: " . implode(', ', array_column(AbTestingClickHouseRoutes::map(), 'table')) . "\n";
+echo "\nWhile messages queued before the 2.0 upgrade are still pending, keep\n";
+echo "AbTestingClickHouseRoutes::legacyV1Map() wired too — a v1 payload has no\n";
+echo "decision_reason and would fail against the v2 tables.\n";

@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Breaking.** Requires `rasuvaeff/yii3-ab-testing` `^2.0`.
+- **Breaking.** Trackers and the message factory take core events
+  (`ExposureEvent`, `ConversionEvent`) instead of an `Assignment` and a goal.
+  The tracker's optional `$eventId` argument is gone: the core already minted
+  the identity, and the tracker now always passes `$event->eventId` to
+  `Outbox::record()`, so the message id and the payload's `event_id` cannot
+  disagree.
+- **Breaking.** Payload v2 is the canonical schema v2 row, produced by core's
+  `CanonicalEventSerializer` rather than assembled here. Building it locally is
+  how the two delivery paths drifted in v1 — each dropped different fields and
+  nothing noticed.
+- **Breaking.** `AbTestingClickHouseRoutes::map()` takes no arguments and
+  targets the tables and column order owned by
+  `yii3-ab-testing-clickhouse`'s `AnalyticsSchemaV2`. `legacyV1Map()` returns
+  the old routes for draining messages queued before the upgrade.
+
+### Removed
+
+- **Breaking.** `AllowListAnalyticsContextPolicy`, `AnalyticsContextPolicyInterface`
+  and `SystemClock` moved to the core. The allow-list is applied once, when the
+  facade builds the event, so every delivery path filters identically; keeping
+  it here applied it to the durable path only.
+- The `context` params key, for the same reason.
+
+See [UPGRADE.md](UPGRADE.md) for the migration steps.
+
 ## 1.3.0 — 2026-08-01
 
 - Make aggregate-id generation injectable and use stable pseudonymous ids by

@@ -4,85 +4,65 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3AbTestingOutbox;
 
-use InvalidArgumentException;
-use Psr\Clock\ClockInterface;
-use Rasuvaeff\Yii3AbTesting\Assignment;
+use Rasuvaeff\Yii3AbTesting\CanonicalEventSerializer;
+use Rasuvaeff\Yii3AbTesting\ConversionEvent;
+use Rasuvaeff\Yii3AbTesting\EventSerializer;
+use Rasuvaeff\Yii3AbTesting\ExposureEvent;
 
 /**
- * Default JSON factory. Boolean flags are serialized as `0|1` (ClickHouse
- * `UInt8`-friendly), `environment` is always present (empty string when no
- * context), and `event_at` carries the event time (UTC `Y-m-d H:i:s`) from the
- * injected clock — the moment the event was tracked, not when a worker later
- * exports it. A transport-meta `v` field carries {@see PAYLOAD_VERSION} so
- * downstream consumers can distinguish schema generations without parsing every
- * field. Payload field names match the analytics columns owned by
- * `yii3-ab-testing-clickhouse` (see {@see AbTestingClickHouseRoutes}).
+ * Serializes a core event into an outbox message.
+ *
+ * The payload is the canonical schema v2 row, produced by the core's own
+ * serializer rather than assembled here. In v1 this class built its own array,
+ * which is precisely how the two delivery paths drifted: the direct sink and
+ * the outbox dropped different fields, and nothing noticed.
+ *
+ * `event_id` is written into the payload **and** handed to
+ * `Outbox::record(id: …)` by the trackers, so the message id and the payload
+ * field always agree. That matters because the ClickHouse exporter may fill the
+ * event-id column from either, and a mismatch would split one event into two
+ * rows that never deduplicate.
  *
  * @api
  */
 final readonly class DefaultAbTestingOutboxMessageFactory implements AbTestingOutboxMessageFactoryInterface
 {
-    public const int PAYLOAD_VERSION = 1;
-
-    private const string DATETIME_FORMAT = 'Y-m-d H:i:s';
+    /**
+     * Kept as a class constant because consumers branch on it during the
+     * migration window; it mirrors {@see CanonicalEventSerializer::SCHEMA_VERSION}.
+     */
+    public const int PAYLOAD_VERSION = CanonicalEventSerializer::SCHEMA_VERSION;
 
     public function __construct(
-        private ClockInterface $clock = new SystemClock(),
         private AggregateIdStrategyInterface $aggregateIdStrategy = new PseudonymousAggregateIdStrategy(),
-        private AnalyticsContextPolicyInterface $contextPolicy = new AllowListAnalyticsContextPolicy(),
+        private EventSerializer $serializer = new CanonicalEventSerializer(),
     ) {}
 
     #[\Override]
-    public function exposure(Assignment $assignment): AbTestingOutboxPayload
+    public function exposure(ExposureEvent $event): AbTestingOutboxPayload
     {
         return new AbTestingOutboxPayload(
             type: AbTestingOutboxEventType::Exposure->value,
-            payload: $this->encode($this->baseFields($assignment)),
-            aggregateId: $this->aggregateIdStrategy->exposure($assignment),
+            payload: $this->encode($this->serializer->exposure($event)),
+            aggregateId: $this->aggregateIdStrategy->exposure($event),
         );
     }
 
     #[\Override]
-    public function conversion(Assignment $assignment, string $goal): AbTestingOutboxPayload
+    public function conversion(ConversionEvent $event): AbTestingOutboxPayload
     {
-        if ($goal === '') {
-            throw new InvalidArgumentException('Conversion goal must not be empty');
-        }
-
-        $fields = $this->baseFields($assignment);
-        $fields['goal'] = $goal;
-
         return new AbTestingOutboxPayload(
             type: AbTestingOutboxEventType::Conversion->value,
-            payload: $this->encode($fields),
-            aggregateId: $this->aggregateIdStrategy->conversion($assignment, $goal),
+            payload: $this->encode($this->serializer->conversion($event)),
+            aggregateId: $this->aggregateIdStrategy->conversion($event),
         );
     }
 
     /**
-     * @return array<string, mixed>
+     * @param array<string, scalar|null> $row
      */
-    private function baseFields(Assignment $assignment): array
+    private function encode(array $row): string
     {
-        return [
-            'v' => self::PAYLOAD_VERSION,
-            'event_at' => $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format(self::DATETIME_FORMAT),
-            'experiment' => $assignment->experiment,
-            'variant' => $assignment->variant,
-            'subject_id' => $assignment->subjectId,
-            'is_forced' => (int) $assignment->isForced,
-            'is_fallback' => (int) $assignment->isFallback,
-            'is_sticky' => (int) $assignment->isSticky,
-            'environment' => $assignment->context?->getEnvironment() ?? '',
-            'context' => $this->contextPolicy->apply($assignment->context),
-        ];
-    }
-
-    /**
-     * @param array<string, mixed> $fields
-     */
-    private function encode(array $fields): string
-    {
-        return json_encode($fields, JSON_THROW_ON_ERROR);
+        return json_encode($row, JSON_THROW_ON_ERROR);
     }
 }
