@@ -14,6 +14,9 @@ as durable messages. The request path stays fast and survives analytics outages;
 a worker exports the outbox asynchronously (e.g. with `yii3-outbox-clickhouse`).
 
 > Using an AI coding assistant? [llms.txt](llms.txt) has a compact API reference you can use.
+> Projects using the [llm/skills](https://github.com/roxblnfk/skills) Composer
+> plugin also get this package's agent skill synced into `.agents/skills/`
+> automatically on install.
 
 ## Direct sink vs durable pipeline
 
