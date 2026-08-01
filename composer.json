@@ -47,7 +47,7 @@
         "yiisoft/db": "^2.0",
         "yiisoft/db-migration": "^2.0",
         "yiisoft/db-sqlite": "^2.0",
-        "yiisoft/test-support": "^3.0"
+        "yiisoft/test-support": "^3.1"
     },
     "suggest": {
         "rasuvaeff/yii3-ab-testing-clickhouse": "Required by AbTestingClickHouseRoutes, which takes its tables and column order from that package; unnecessary if you route messages somewhere other than ClickHouse"
