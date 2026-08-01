@@ -14,6 +14,12 @@ as durable messages. The request path stays fast and survives analytics outages;
 a worker exports the outbox asynchronously (e.g. with `yii3-outbox-clickhouse`).
 
 > Using an AI coding assistant? [llms.txt](llms.txt) has a compact API reference you can use.
+> Projects using the [llm/skills](https://github.com/roxblnfk/skills) Composer
+> plugin also get this package's agent skill synced into `.agents/skills/`
+> automatically on install.
+
+> Assembling a combination? The family's integration matrix lives in the core:
+> `vendor/rasuvaeff/yii3-ab-testing/docs/integration.md`.
 
 ## Direct sink vs durable pipeline
 
@@ -57,39 +63,47 @@ $exposureTracker = new OutboxExposureTracker($outbox);
 $conversionTracker = new OutboxConversionTracker($outbox);
 
 $assignment = $abTesting->assign(experiment: 'checkout', subjectId: $userId);
-$exposureTracker->trackExposure($assignment, eventId: 'exposure-order-42');
+// The facade mints the event and calls the tracker; its identity travels
+// with it, so a retry of the same domain event stays one row.
+$exposure = $ab->trackExposure($assignment);
 // later, on the goal:
-$conversionTracker->trackConversion($assignment, goal: 'purchase', eventId: 'conversion-order-42');
+$ab->trackConversion($assignment, goal: 'purchase', exposure: $exposure);
 ```
 
 ### Payload
 
-`ab.exposure` / `ab.conversion` messages carry a JSON object whose field names
-match the analytics columns of `yii3-ab-testing-clickhouse`:
+`ab.exposure` / `ab.conversion` messages carry the canonical schema v2 row,
+produced by the core's `CanonicalEventSerializer` — not assembled here. That is
+deliberate: in v1 each delivery path built its own array, they dropped different
+fields, and nothing noticed until the data was already wrong.
 
 ```json
-{"v":1,"event_at":"2026-06-12 10:00:00","experiment":"checkout","variant":"green","subject_id":"user-1","is_forced":0,"is_fallback":0,"is_sticky":0,"environment":"production","context":{}}
+{"v":2,"event_id":"0198f2c1-4d3a-7c9e-8b21-6f4a2d9e0c17","occurred_at":"2026-08-01 10:00:00.123","experiment":"checkout","variant":"green","subject_id":"user-1","decision_reason":"assigned","assignment_source":"computed","experiment_revision":"db:7","environment":"production","dimensions":"{\"country\":\"RU\"}"}
 ```
 
-The leading `v` field is a transport-meta schema version (`DefaultAbTestingOutboxMessageFactory::PAYLOAD_VERSION`).
-It is **not** listed in `AbTestingClickHouseRoutes` columns and is never written to ClickHouse — it exists
-so downstream consumers reading raw outbox messages can detect payload schema generations.
-Conversions add `"goal"`. Flags are `0|1`; `environment` is always present.
-`event_at` is the event time (UTC `Y-m-d H:i:s`) stamped when tracked — distinct
-from the worker's export time.
+Conversions add `goal` and `exposure_event_id`.
 
-`context` is the extensible v1 field for additional analytics dimensions. The
-default policy persists none. Configure `AllowListAnalyticsContextPolicy` to
-allow attributes explicitly, rename output keys, or replace selected values
-with `[redacted]`. Unknown attributes are always dropped. The current
-`AbTestingClickHouseRoutes` intentionally omit `context`, so adding dimensions
-does not change the existing v1 ClickHouse tables.
+| Field | Note |
+|---|---|
+| `v` | schema generation; transport meta, never written to ClickHouse |
+| `event_id` | minted by the core, the deduplication key of the whole pipeline |
+| `occurred_at` | event time, not export time — the partition key derives from it |
+| `decision_reason` | `assigned`, `forced`, `fallback_disabled`, `fallback_targeting_mismatch`; only `assigned` counts as participation |
+| `assignment_source` | `computed` or `store` (served from a sticky store) |
+| `dimensions` | a JSON **string**, not a nested object: the exporter rejects non-scalar payload fields |
+
+Analytics dimensions are filtered by the core's `AllowListAnalyticsContextPolicy`,
+configured on the `AbTesting` facade. It moved there in 2.0 so that every
+delivery path applies one allow-list; configured here it filtered the durable
+path only.
 
 Payload consumers must branch on `v` and accept every version advertised during
-a rollout. A v2 producer must use new event types/routes or a consumer that can
-read v1 and v2 concurrently; never reinterpret an existing v1 field in place.
-Keep v1 production until all consumers understand v2, dual-read during the
-migration window, then retire v1 explicitly.
+a rollout — see [UPGRADE.md](UPGRADE.md) for draining v1 messages queued before
+the upgrade.
+
+`AbTestingOutboxEventType` fixes the two message types (`ab.exposure`,
+`ab.conversion`); `AbTestingOutboxPayload` is what the factory hands to
+`Outbox::record()` — the type, the JSON payload and the aggregate id.
 
 ### Identity and retries
 
@@ -103,24 +117,22 @@ The default config-plugin factory is configured through application params:
 ```php
 'rasuvaeff/yii3-ab-testing-outbox' => [
     'aggregateIdSecret' => $_ENV['AB_AGGREGATE_SECRET'],
-    'context' => [
-        'allowedAttributes' => ['country', 'plan', 'email'],
-        'renamedAttributes' => ['plan' => 'billing_plan'],
-        'redactedAttributes' => ['email'],
-    ],
 ],
 ```
 
-The optional `eventId` tracker argument is the stable domain event id passed to
-`Outbox::record(id: ...)`. Re-recording the same domain event therefore keeps the
-same outbox/ClickHouse `event_id`; omitting it preserves generated ids, so two
-tracker calls remain two distinct events. Storage must enforce whatever
-duplicate-id behavior your application requires.
+Analytics dimensions are no longer configured here — the allow-list lives on the
+`AbTesting` facade, so it applies to every delivery path rather than this one.
+
+The event id comes from the event itself: the core mints it, the tracker writes
+it into the payload **and** passes it to `Outbox::record(id: ...)`. The two must
+agree, because the exporter may fill the ClickHouse `event_id` column from
+either, and a mismatch splits one event into two rows that never deduplicate.
 
 ### ClickHouse routing
 
 This package ships a compatible v1 ClickHouse schema in `migrations/` and a
-matching `AbTestingClickHouseRoutes::map()`. Its default tables are
+matching `AbTestingClickHouseRoutes::map()`, which takes its tables and column
+order from `yii3-ab-testing-clickhouse`'s `AnalyticsSchemaV2`. Its tables are
 `ab_outbox_exposures` and `ab_outbox_conversions`, deliberately distinct from
 the incompatible direct-sink tables. Two transport-meta columns lead each row:
 `event_id` (filled by the exporter from the message id, for

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3AbTestingOutbox;
 
-use Rasuvaeff\Yii3AbTesting\Assignment;
+use Rasuvaeff\Yii3AbTesting\ConversionEvent;
 use Rasuvaeff\Yii3AbTesting\ConversionTracker;
 use Rasuvaeff\Yii3Outbox\Outbox;
 
@@ -23,15 +23,15 @@ final readonly class OutboxConversionTracker implements ConversionTracker
     ) {}
 
     #[\Override]
-    public function trackConversion(Assignment $assignment, string $goal, ?string $eventId = null): void
+    public function trackConversion(ConversionEvent $event): void
     {
-        $message = $this->messageFactory->conversion($assignment, $goal);
+        $message = $this->messageFactory->conversion($event);
 
         $this->outbox->record(
             type: $message->type,
             payload: $message->payload,
             aggregateId: $message->aggregateId,
-            id: $eventId,
+            id: $event->eventId,
         );
     }
 }

@@ -4,18 +4,19 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3AbTestingOutbox;
 
-use Rasuvaeff\Yii3AbTesting\Assignment;
+use Rasuvaeff\Yii3AbTesting\ConversionEvent;
+use Rasuvaeff\Yii3AbTesting\ExposureEvent;
 
 /**
- * Turns an {@see Assignment} (and a conversion goal) into a stable outbox
- * payload. Isolating extraction and serialization here keeps the trackers thin
- * and makes the payload format swappable.
+ * Turns a core event into a stable outbox payload. Isolating serialization here
+ * keeps the trackers thin and lets an application swap the payload format
+ * without touching them.
  *
  * @api
  */
 interface AbTestingOutboxMessageFactoryInterface
 {
-    public function exposure(Assignment $assignment): AbTestingOutboxPayload;
+    public function exposure(ExposureEvent $event): AbTestingOutboxPayload;
 
-    public function conversion(Assignment $assignment, string $goal): AbTestingOutboxPayload;
+    public function conversion(ConversionEvent $event): AbTestingOutboxPayload;
 }

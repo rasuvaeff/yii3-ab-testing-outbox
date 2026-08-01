@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3AbTestingOutbox;
 
-use Rasuvaeff\Yii3AbTesting\Assignment;
+use Rasuvaeff\Yii3AbTesting\ExposureEvent;
 use Rasuvaeff\Yii3AbTesting\ExposureTracker;
 use Rasuvaeff\Yii3Outbox\Outbox;
 
@@ -26,15 +26,19 @@ final readonly class OutboxExposureTracker implements ExposureTracker
     ) {}
 
     #[\Override]
-    public function trackExposure(Assignment $assignment, ?string $eventId = null): void
+    public function trackExposure(ExposureEvent $event): void
     {
-        $message = $this->messageFactory->exposure($assignment);
+        $message = $this->messageFactory->exposure($event);
 
         $this->outbox->record(
             type: $message->type,
             payload: $message->payload,
             aggregateId: $message->aggregateId,
-            id: $eventId,
+            // The core already minted the identity, and it is inside the
+            // payload too. Passing it here keeps the message id and the payload
+            // field equal, so a retry produces one row rather than two that
+            // never deduplicate.
+            id: $event->eventId,
         );
     }
 }

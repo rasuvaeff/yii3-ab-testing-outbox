@@ -25,7 +25,7 @@
         "php": "8.3 - 8.5",
         "ext-json": "*",
         "psr/clock": "^1.0",
-        "rasuvaeff/yii3-ab-testing": "^1.2",
+        "rasuvaeff/yii3-ab-testing": "^2.0",
         "rasuvaeff/yii3-outbox": "^1.2"
     },
     "require-dev": {
@@ -35,7 +35,7 @@
         "infection/infection": "^0.33",
         "maglnet/composer-require-checker": "^4.17",
         "rasuvaeff/clickhouse-toolkit": "^1.6",
-        "rasuvaeff/yii3-ab-testing-clickhouse": "^1.1",
+        "rasuvaeff/yii3-ab-testing-clickhouse": "^2.0",
         "rasuvaeff/yii3-outbox-clickhouse": "^1.2",
         "rasuvaeff/yii3-outbox-db": "^2.0",
         "rector/rector": "^2.4",
@@ -47,7 +47,10 @@
         "yiisoft/db": "^2.0",
         "yiisoft/db-migration": "^2.0",
         "yiisoft/db-sqlite": "^2.0",
-        "yiisoft/test-support": "^3.0"
+        "yiisoft/test-support": "^3.1"
+    },
+    "suggest": {
+        "rasuvaeff/yii3-ab-testing-clickhouse": "Required by AbTestingClickHouseRoutes, which takes its tables and column order from that package; unnecessary if you route messages somewhere other than ClickHouse"
     },
     "autoload": {
         "psr-4": {
@@ -78,6 +81,9 @@
         },
         "config-plugin-options": {
             "source-directory": "config"
+        },
+        "skills": {
+            "source": "resources/skills"
         }
     },
     "scripts": {

@@ -4,18 +4,23 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3AbTestingOutbox\Tests\Integration;
 
+use DateTimeImmutable;
+use DateTimeZone;
 use Rasuvaeff\ClickHouseToolkit\ClickHouseClientFactory;
 use Rasuvaeff\ClickHouseToolkit\ClickHouseConfig;
 use Rasuvaeff\ClickHouseToolkit\ClickHouseDataReader;
 use Rasuvaeff\ClickHouseToolkit\ClickHouseMigrationRunner;
 use Rasuvaeff\ClickHouseToolkit\ClickHouseQueryBuilder;
-use Rasuvaeff\Yii3AbTesting\Assignment;
-use Rasuvaeff\Yii3AbTesting\AssignmentContext;
+use Rasuvaeff\Yii3AbTesting\AssignmentSource;
+use Rasuvaeff\Yii3AbTesting\ConversionEvent;
+use Rasuvaeff\Yii3AbTesting\DecisionReason;
+use Rasuvaeff\Yii3AbTesting\ExposureEvent;
+use Rasuvaeff\Yii3AbTestingClickHouse\AnalyticsSchemaV2;
+use Rasuvaeff\Yii3AbTestingClickHouse\SchemaMigrations;
 use Rasuvaeff\Yii3AbTestingOutbox\AbTestingClickHouseRoutes;
 use Rasuvaeff\Yii3AbTestingOutbox\DefaultAbTestingOutboxMessageFactory;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxConversionTracker;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxExposureTracker;
-use Rasuvaeff\Yii3AbTestingOutbox\Tests\FakeClock;
 use Rasuvaeff\Yii3Outbox\Outbox;
 use Rasuvaeff\Yii3Outbox\RetryPolicy;
 use Rasuvaeff\Yii3OutboxClickHouse\ClickHouseOutboxExporter;
@@ -34,8 +39,15 @@ use Yiisoft\Db\Migration\Informer\NullMigrationInformer;
 use Yiisoft\Db\Migration\MigrationBuilder;
 use Yiisoft\Db\Sqlite\Connection as SqliteConnection;
 use Yiisoft\Db\Sqlite\Driver as SqliteDriver;
+use Yiisoft\Test\Support\Clock\StaticClock;
 use Yiisoft\Test\Support\SimpleCache\MemorySimpleCache;
 
+/**
+ * Clean-install proof of the durable path: tracker -> SQLite outbox storage ->
+ * exporter -> live ClickHouse, against the canonical schema v2 owned by
+ * `yii3-ab-testing-clickhouse`. The v1 DDL this package still ships is applied
+ * too, so the legacy files stay valid SQL while the queue drains.
+ */
 #[Test]
 #[CoversNothing]
 final class DurableClickHousePipelineTest
@@ -70,17 +82,30 @@ final class DurableClickHousePipelineTest
             password: $this->env('CLICKHOUSE_PASSWORD', ''),
         ));
 
+        $legacy = AbTestingClickHouseRoutes::legacyV1Map();
         $client = $this->clientFactory->create();
-        foreach ([AbTestingClickHouseRoutes::EXPOSURES_TABLE, AbTestingClickHouseRoutes::CONVERSIONS_TABLE, '_migrations'] as $table) {
+        foreach ([
+            AnalyticsSchemaV2::EXPOSURES_TABLE,
+            AnalyticsSchemaV2::CONVERSIONS_TABLE,
+            'ab_exposures',
+            'ab_conversions',
+            $legacy['ab.exposure']['table'],
+            $legacy['ab.conversion']['table'],
+            '_migrations',
+        ] as $table) {
             $client->executeQuery('DROP TABLE IF EXISTS ' . $table);
         }
 
+        // The schema owner creates the v2 tables the routes target.
+        (new SchemaMigrations(client: $client))->apply();
+
+        // The v1 tables shipped here remain applicable for draining.
         (new ClickHouseMigrationRunner(
             client: $client,
             migrationsPath: dirname(__DIR__, 2) . '/migrations',
             placeholders: [
-                'outbox_exposures_table' => AbTestingClickHouseRoutes::EXPOSURES_TABLE,
-                'outbox_conversions_table' => AbTestingClickHouseRoutes::CONVERSIONS_TABLE,
+                'outbox_exposures_table' => $legacy['ab.exposure']['table'],
+                'outbox_conversions_table' => $legacy['ab.conversion']['table'],
             ],
         ))->run();
     }
@@ -91,29 +116,48 @@ final class DurableClickHousePipelineTest
         $this->db?->close();
     }
 
-    public function tracksThroughDbOutboxAndExportsToShippedClickHouseSchema(): void
+    public function tracksThroughDbOutboxAndExportsToTheCanonicalSchema(): void
     {
-        if (!$this->clientFactory instanceof \Rasuvaeff\ClickHouseToolkit\ClickHouseClientFactory || !$this->db instanceof \Yiisoft\Db\Connection\ConnectionInterface) {
+        if (!$this->clientFactory instanceof ClickHouseClientFactory || !$this->db instanceof ConnectionInterface) {
             return;
         }
 
-        $clock = new FakeClock(new \DateTimeImmutable('2026-07-29 10:00:00', new \DateTimeZone('UTC')));
+        $clock = new StaticClock(new DateTimeImmutable('2026-07-29 12:00:00', new DateTimeZone('UTC')));
+        $occurredAt = new DateTimeImmutable('2026-07-29 10:00:00.123', new DateTimeZone('UTC'));
         $storage = new DbOutboxStorage(db: $this->db);
         $outbox = new Outbox(storage: $storage, clock: $clock);
-        $messageFactory = new DefaultAbTestingOutboxMessageFactory(clock: $clock);
-        $assignment = new Assignment(
+        $messageFactory = new DefaultAbTestingOutboxMessageFactory();
+
+        $exposureEvent = new ExposureEvent(
+            eventId: 'exposure-1',
+            occurredAt: $occurredAt,
             experiment: 'checkout-button',
             variant: 'green',
             subjectId: 'user-1',
-            context: AssignmentContext::forEnvironment('production'),
-            isSticky: true,
+            reason: DecisionReason::Assigned,
+            source: AssignmentSource::Store,
+            experimentRevision: 'db:7',
+            environment: 'production',
+            dimensions: ['country' => 'RU'],
+        );
+        $conversionEvent = new ConversionEvent(
+            eventId: 'conversion-1',
+            occurredAt: $occurredAt,
+            experiment: 'checkout-button',
+            variant: 'green',
+            subjectId: 'user-1',
+            goal: 'purchase',
+            reason: DecisionReason::Assigned,
+            source: AssignmentSource::Store,
+            experimentRevision: 'db:7',
+            environment: 'production',
+            dimensions: ['country' => 'RU'],
+            exposureEventId: 'exposure-1',
         );
 
-        (new OutboxExposureTracker(outbox: $outbox, messageFactory: $messageFactory))->trackExposure($assignment);
-        (new OutboxConversionTracker(outbox: $outbox, messageFactory: $messageFactory))->trackConversion(
-            assignment: $assignment,
-            goal: 'purchase',
-        );
+        (new OutboxExposureTracker(outbox: $outbox, messageFactory: $messageFactory))->trackExposure($exposureEvent);
+        (new OutboxConversionTracker(outbox: $outbox, messageFactory: $messageFactory))
+            ->trackConversion($conversionEvent);
 
         Assert::count($storage->findPending(), 2);
 
@@ -131,20 +175,30 @@ final class DurableClickHousePipelineTest
         Assert::same($storage->findPending(), []);
 
         $exposure = $this->readOne(
-            table: AbTestingClickHouseRoutes::EXPOSURES_TABLE,
+            table: AnalyticsSchemaV2::EXPOSURES_TABLE,
             columns: AbTestingClickHouseRoutes::map()['ab.exposure']['columns'],
         );
         $conversion = $this->readOne(
-            table: AbTestingClickHouseRoutes::CONVERSIONS_TABLE,
+            table: AnalyticsSchemaV2::CONVERSIONS_TABLE,
             columns: AbTestingClickHouseRoutes::map()['ab.conversion']['columns'],
         );
 
-        Assert::true(is_string($exposure['event_id']) && $exposure['event_id'] !== '');
-        Assert::same($exposure['event_at'], '2026-07-29 10:00:00');
+        // The message id and the payload's event_id are the same value, so the
+        // exporter filling the column from the message id cannot split the
+        // event into two rows.
+        Assert::same($exposure['event_id'], 'exposure-1');
+        Assert::same($exposure['occurred_at'], '2026-07-29 10:00:00.123');
         Assert::same($exposure['experiment'], 'checkout-button');
-        Assert::same($exposure['is_sticky'], 1);
+        Assert::same($exposure['decision_reason'], 'assigned');
+        Assert::same($exposure['assignment_source'], 'store');
+        Assert::same($exposure['experiment_revision'], 'db:7');
         Assert::same($exposure['environment'], 'production');
+        Assert::same($exposure['dimensions'], '{"country":"RU"}');
+
+        Assert::same($conversion['event_id'], 'conversion-1');
         Assert::same($conversion['goal'], 'purchase');
+        Assert::same($conversion['exposure_event_id'], 'exposure-1');
+        Assert::same($conversion['dimensions'], '{"country":"RU"}');
     }
 
     private function env(string $name, string $default): string

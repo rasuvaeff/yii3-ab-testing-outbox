@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3AbTestingOutbox;
 
-use Rasuvaeff\Yii3AbTesting\Assignment;
+use Rasuvaeff\Yii3AbTesting\ConversionEvent;
+use Rasuvaeff\Yii3AbTesting\ExposureEvent;
 
 /**
  * Deterministic aggregate ids that never contain the raw subject id. Inject an
@@ -19,21 +20,21 @@ final readonly class PseudonymousAggregateIdStrategy implements AggregateIdStrat
     ) {}
 
     #[\Override]
-    public function exposure(Assignment $assignment): string
+    public function exposure(ExposureEvent $event): string
     {
         return 'exposure:' . $this->digest([
-            $assignment->experiment,
-            $assignment->subjectId,
+            $event->experiment,
+            $event->subjectId,
         ]);
     }
 
     #[\Override]
-    public function conversion(Assignment $assignment, string $goal): string
+    public function conversion(ConversionEvent $event): string
     {
         return 'conversion:' . $this->digest([
-            $assignment->experiment,
-            $assignment->subjectId,
-            $goal,
+            $event->experiment,
+            $event->subjectId,
+            $event->goal,
         ]);
     }
 

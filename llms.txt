@@ -20,26 +20,31 @@ make mutation
 
 ## Rules
 
-- `OutboxExposureTracker` / `OutboxConversionTracker` implement
-  `ExposureTracker` / `ConversionTracker`; each calls `Outbox::record()`.
-- NOT `FlushableTracker` — the event is persisted immediately (no request buffer).
-- Message types: `ab.exposure`, `ab.conversion` (`AbTestingOutboxEventType`).
-- Payload starts with transport-meta `v` (int, schema version =
-  `DefaultAbTestingOutboxMessageFactory::PAYLOAD_VERSION`); NOT a ClickHouse column.
-- Payload field names match the analytics columns of `yii3-ab-testing-clickhouse`
-  (source of truth); flags are int `0|1`; `environment` always present;
-  conversion adds non-empty `goal`. Extensible `context` is a policy-filtered
-  object and is intentionally not part of the v1 ClickHouse route.
+- Payload is core's canonical schema v2 row, produced by `CanonicalEventSerializer`
+  — never assembled here. Fields: v(=2), event_id, occurred_at, experiment,
+  variant, subject_id, decision_reason, assignment_source, experiment_revision,
+  environment, dimensions; conversions add goal + exposure_event_id.
+- `dimensions` is a JSON STRING, not a nested object: the exporter rejects
+  non-scalar payload fields.
+- The context allow-list and the clock live in the CORE now, configured on the
+  AbTesting facade so every delivery path filters identically.
 - Default aggregate ids are pseudonymous `exposure:<digest>` /
   `conversion:<digest>`. Inject a secret into `PseudonymousAggregateIdStrategy`
   in production or replace `AggregateIdStrategyInterface`.
-- Tracker methods accept optional `eventId`; it is passed to
-  `Outbox::record(id: ...)` for stable retry identity. Omitted ids are generated.
-- Consumers branch on payload `v`. During a future v2 rollout, keep v1 and v2
-  consumers/routes side by side; never reinterpret v1 fields in place.
+- Trackers take core events (ExposureEvent/ConversionEvent), not an Assignment.
+  There is no `eventId` argument: the core minted it, and the tracker writes it
+  into the payload AND passes it to `Outbox::record(id: …)`. They must stay
+  equal — the exporter may fill the event-id column from either, and a mismatch
+  splits one event into two rows that never deduplicate.
+- Consumers branch on payload `v`. A v1 message has no decision_reason and no
+  dimensions, so routing it into the v2 tables fails on a missing field — keep
+  `AbTestingClickHouseRoutes::legacyV1Map()` wired until the queue drains.
 - One-source rule: binds `ExposureTracker` + `ConversionTracker`; do not install
   next to another tracker backend without an app-side `Composite*Tracker`.
-- `migrations/` contains the compatible outbox ClickHouse v1 schema. Defaults
+- v2 routes target `ab_exposures_v2`/`ab_conversions_v2`, owned by
+  `yii3-ab-testing-clickhouse` (`AnalyticsSchemaV2`). Never restate table names
+  or column order here — an INSERT is positional.
+- `migrations/` contains the outbox ClickHouse v1 schema, kept only for draining. Defaults
   are `ab_outbox_exposures` / `ab_outbox_conversions`, not the incompatible
   direct-sink tables; DDL placeholders are `outbox_exposures_table` /
   `outbox_conversions_table`.
@@ -58,13 +63,15 @@ $outbox = new Outbox(storage: $storage, clock: $clock);
 $exposure = new OutboxExposureTracker($outbox);
 $conversion = new OutboxConversionTracker($outbox);
 
-$exposure->trackExposure($assignment, eventId: 'exposure-order-42');
-$conversion->trackConversion($assignment, goal: 'purchase', eventId: 'conversion-order-42');
+// The facade mints the event and calls the tracker.
+$event = $ab->trackExposure($assignment);
+$ab->trackConversion($assignment, goal: 'purchase', exposure: $event);
 
 // route map for the shipped ClickHouse DDL (leading event_id for dedup):
 $routes = AbTestingClickHouseRoutes::map();
 // custom names:
-$routes = AbTestingClickHouseRoutes::map(exposuresTable: 'custom_outbox_exposures', conversionsTable: 'custom_outbox_conversions', eventIdColumn: 'event_id');
+$routes = AbTestingClickHouseRoutes::map();          // schema v2
+$legacy = AbTestingClickHouseRoutes::legacyV1Map();  // drain queued v1 messages
 ```
 
 Apply `migrations/` with `ClickHouseMigrationRunner` and placeholders matching

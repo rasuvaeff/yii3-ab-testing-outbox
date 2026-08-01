@@ -17,6 +17,12 @@
 
 > Используете AI-ассистента? В [llms.txt](llms.txt) — компактный API-справочник,
 > которым можно поделиться с моделью.
+> Проекты с Composer-плагином [llm/skills](https://github.com/roxblnfk/skills)
+> дополнительно получают agent skill этого пакета: он автоматически синкается в
+> `.agents/skills/` при установке.
+
+> Собираете свою комбинацию? Матрица интеграций семейства живёт в ядре:
+> `vendor/rasuvaeff/yii3-ab-testing/docs/integration.ru.md`.
 
 ## Прямой sink vs долговечный pipeline
 
@@ -60,42 +66,46 @@ $exposureTracker = new OutboxExposureTracker($outbox);
 $conversionTracker = new OutboxConversionTracker($outbox);
 
 $assignment = $abTesting->assign(experiment: 'checkout', subjectId: $userId);
-$exposureTracker->trackExposure($assignment, eventId: 'exposure-order-42');
+// Фасад минтит событие и вызывает трекер; идентичность едет вместе с ним,
+// поэтому повтор одного доменного события остаётся одной строкой.
+$exposure = $ab->trackExposure($assignment);
 // later, on the goal:
-$conversionTracker->trackConversion($assignment, goal: 'purchase', eventId: 'conversion-order-42');
+$ab->trackConversion($assignment, goal: 'purchase', exposure: $exposure);
 ```
 
 ### Payload
 
-Сообщения `ab.exposure` / `ab.conversion` несут JSON-объект, имена полей
-которого совпадают с аналитическими колонками `yii3-ab-testing-clickhouse`:
+Сообщения `ab.exposure` / `ab.conversion` несут каноническую строку схемы v2,
+которую собирает `CanonicalEventSerializer` ядра — а не этот пакет. Это
+сознательно: в v1 каждый путь доставки строил свой массив, они теряли разные
+поля, и никто этого не замечал, пока данные уже не были испорчены.
 
 ```json
-{"v":1,"event_at":"2026-06-12 10:00:00","experiment":"checkout","variant":"green","subject_id":"user-1","is_forced":0,"is_fallback":0,"is_sticky":0,"environment":"production","context":{}}
+{"v":2,"event_id":"0198f2c1-4d3a-7c9e-8b21-6f4a2d9e0c17","occurred_at":"2026-08-01 10:00:00.123","experiment":"checkout","variant":"green","subject_id":"user-1","decision_reason":"assigned","assignment_source":"computed","experiment_revision":"db:7","environment":"production","dimensions":"{\"country\":\"RU\"}"}
 ```
 
-Ведущее поле `v` — это версия схемы transport-meta
-(`DefaultAbTestingOutboxMessageFactory::PAYLOAD_VERSION`). Она **не** указана в
-колонках `AbTestingClickHouseRoutes` и никогда не пишется в ClickHouse — она
-существует, чтобы downstream-консьюмеры, читающие сырые outbox-сообщения, могли
-различать поколения схемы payload'а. Для конверсий добавляется `"goal"`. Флаги
-имеют значения `0|1`; `environment` присутствует всегда. `event_at` — время
-события (UTC `Y-m-d H:i:s`), фиксируемое при трекинге; оно отличается от времени
-экспорта воркером.
+Конверсии добавляют `goal` и `exposure_event_id`.
 
-`context` — расширяемое поле v1 для дополнительных аналитических dimensions. По
-умолчанию политика не сохраняет ни одного атрибута. Настройте
-`AllowListAnalyticsContextPolicy`, чтобы явно разрешить атрибуты, переименовать
-выходные ключи или заменить выбранные значения на `[redacted]`. Неизвестные
-атрибуты всегда отбрасываются. Текущие `AbTestingClickHouseRoutes` намеренно не
-содержат `context`, поэтому dimensions не меняют существующие ClickHouse v1
-таблицы.
+| Поле | Замечание |
+|---|---|
+| `v` | поколение схемы; транспортная мета, в ClickHouse не пишется |
+| `event_id` | минтит ядро; ключ дедупликации всего конвейера |
+| `occurred_at` | время события, а не экспорта — от него зависит ключ партиционирования |
+| `decision_reason` | `assigned`, `forced`, `fallback_disabled`, `fallback_targeting_mismatch`; участием считается только `assigned` |
+| `assignment_source` | `computed` или `store` (выдан sticky-хранилищем) |
+| `dimensions` | JSON-**строка**, а не вложенный объект: экспортёр отвергает нескалярные поля payload |
 
-Consumer обязан ветвиться по `v` и в период rollout принимать все заявленные
-версии. Producer v2 должен использовать новые event types/routes либо consumer,
-который одновременно читает v1 и v2; переопределять смысл существующего поля v1
-нельзя. Сохраняйте v1, пока все consumer'ы не понимают v2, используйте dual-read
-на время миграции и отключайте v1 явно.
+Измерения фильтрует `AllowListAnalyticsContextPolicy` ядра, настраиваемая на
+фасаде `AbTesting`. Она переехала туда в 2.0, чтобы один allow-list применялся
+ко всем путям доставки; настроенная здесь, она фильтровала только durable-путь.
+
+Потребители payload обязаны ветвиться по `v` и принимать каждую версию,
+объявленную во время выката — как дренировать сообщения v1, поставленные в
+очередь до апгрейда, см. [UPGRADE.md](UPGRADE.md).
+
+`AbTestingOutboxEventType` фиксирует два типа сообщений (`ab.exposure`,
+`ab.conversion`); `AbTestingOutboxPayload` — то, что фабрика передаёт в
+`Outbox::record()`: тип, JSON-payload и aggregate id.
 
 ### Идентичность и повторы
 
@@ -109,19 +119,17 @@ outbox. Передайте секрет приложения для защиты
 ```php
 'rasuvaeff/yii3-ab-testing-outbox' => [
     'aggregateIdSecret' => $_ENV['AB_AGGREGATE_SECRET'],
-    'context' => [
-        'allowedAttributes' => ['country', 'plan', 'email'],
-        'renamedAttributes' => ['plan' => 'billing_plan'],
-        'redactedAttributes' => ['email'],
-    ],
 ],
 ```
 
-Необязательный tracker-аргумент `eventId` передаёт стабильный domain event id в
-`Outbox::record(id: ...)`. Повторная запись того же domain event сохраняет тот же
-outbox/ClickHouse `event_id`; без него id генерируется и два вызова tracker'а
-остаются двумя разными событиями. Нужное поведение duplicate id должно
-обеспечивать выбранное storage приложения.
+Измерения здесь больше не настраиваются — allow-list живёт на фасаде
+`AbTesting`, поэтому применяется ко всем путям доставки, а не только к этому.
+
+Идентификатор события приходит из самого события: ядро его минтит, трекер
+пишет его в payload **и** передаёт в `Outbox::record(id: ...)`. Эти два значения
+обязаны совпадать: экспортёр вправе заполнить колонку `event_id` из любого из
+них, а расхождение расщепит одно событие на две строки, которые никогда не
+схлопнутся.
 
 ### Маршрутизация ClickHouse
 
