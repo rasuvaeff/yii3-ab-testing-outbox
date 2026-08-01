@@ -18,6 +18,9 @@ a worker exports the outbox asynchronously (e.g. with `yii3-outbox-clickhouse`).
 > plugin also get this package's agent skill synced into `.agents/skills/`
 > automatically on install.
 
+> Assembling a combination? The family's integration matrix lives in the core:
+> `vendor/rasuvaeff/yii3-ab-testing/docs/integration.md`.
+
 ## Direct sink vs durable pipeline
 
 | | Direct | Durable (this package) |
