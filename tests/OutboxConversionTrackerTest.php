@@ -43,7 +43,7 @@ final class OutboxConversionTrackerTest
         Assert::same($pending[0]->getType(), 'ab.conversion');
         Assert::string($pending[0]->getPayload())->contains('"goal":"purchase"');
         Assert::true(is_string($pending[0]->getAggregateId()));
-        Assert::false(str_contains((string) $pending[0]->getAggregateId(), 'user-1'));
+        Assert::false(str_contains($pending[0]->getAggregateId(), 'user-1'));
     }
 
     public function isNotFlushable(): void

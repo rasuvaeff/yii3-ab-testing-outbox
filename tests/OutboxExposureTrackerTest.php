@@ -43,7 +43,7 @@ final class OutboxExposureTrackerTest
         Assert::same($pending[0]->getType(), 'ab.exposure');
         Assert::string($pending[0]->getPayload())->contains('"experiment":"checkout"');
         Assert::true(is_string($pending[0]->getAggregateId()));
-        Assert::false(str_contains((string) $pending[0]->getAggregateId(), 'user-1'));
+        Assert::false(str_contains($pending[0]->getAggregateId(), 'user-1'));
     }
 
     public function isNotFlushable(): void

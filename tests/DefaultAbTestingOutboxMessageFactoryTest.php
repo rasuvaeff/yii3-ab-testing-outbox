@@ -38,7 +38,7 @@ final class DefaultAbTestingOutboxMessageFactoryTest
 
         Assert::same($payload->type, 'ab.exposure');
         Assert::true(is_string($payload->aggregateId));
-        Assert::false(str_contains((string) $payload->aggregateId, 'user-1'));
+        Assert::false(str_contains($payload->aggregateId, 'user-1'));
         Assert::same($this->decode($payload->payload), [
             'v' => 2,
             'event_id' => 'evt-1',
@@ -63,7 +63,7 @@ final class DefaultAbTestingOutboxMessageFactoryTest
 
         Assert::same($payload->type, 'ab.conversion');
         Assert::true(is_string($payload->aggregateId));
-        Assert::false(str_contains((string) $payload->aggregateId, 'user-1'));
+        Assert::false(str_contains($payload->aggregateId, 'user-1'));
         Assert::same($this->decode($payload->payload), [
             'v' => 2,
             'event_id' => 'evt-2',
