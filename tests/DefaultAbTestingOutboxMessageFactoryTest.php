@@ -124,10 +124,17 @@ final class DefaultAbTestingOutboxMessageFactoryTest
     {
         yield 'assigned, computed' => [DecisionReason::Assigned, AssignmentSource::Computed, 'assigned', 'computed'];
         yield 'forced, store' => [DecisionReason::Forced, AssignmentSource::Store, 'forced', 'store'];
-        yield 'fallback, computed' => [
+        // v1 collapsed both of these into the single `is_fallback` flag.
+        yield 'fallback disabled' => [
             DecisionReason::FallbackDisabled,
             AssignmentSource::Computed,
             'fallback_disabled',
+            'computed',
+        ];
+        yield 'fallback targeting mismatch' => [
+            DecisionReason::FallbackTargetingMismatch,
+            AssignmentSource::Computed,
+            'fallback_targeting_mismatch',
             'computed',
         ];
     }
