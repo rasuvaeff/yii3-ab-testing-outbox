@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Rasuvaeff\Yii3AbTesting\AssignmentSource;
 use Rasuvaeff\Yii3AbTesting\DecisionReason;
+use Rasuvaeff\Yii3AbTestingOutbox\AbTestingOutboxPayload;
 use Rasuvaeff\Yii3AbTestingOutbox\DefaultAbTestingOutboxMessageFactory;
 use Rasuvaeff\Yii3AbTestingOutbox\PseudonymousAggregateIdStrategy;
 use Testo\Assert;
@@ -18,6 +19,7 @@ use Testo\Test;
 
 #[Test]
 #[Covers(DefaultAbTestingOutboxMessageFactory::class)]
+#[Covers(AbTestingOutboxPayload::class)]
 final class DefaultAbTestingOutboxMessageFactoryTest
 {
     private DefaultAbTestingOutboxMessageFactory $factory;
