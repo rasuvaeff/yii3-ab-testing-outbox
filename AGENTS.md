@@ -40,27 +40,15 @@ belong downstream. It only serializes domain events into outbox messages.
 
 ## Commands
 
-No PHP/Composer on the host — run in Docker via the `composer:2` image. Core
-`yii3-outbox` is consumed via a path repository while unpublished, so mount the
-**monorepo root**:
+No PHP/Composer on the host — run in Docker via the `composer:2` image.
 
 ```bash
-# install (inject path repo with a version override, then revert + drop the lock)
-docker run --rm -v "$REPO_ROOT":/repo -w /repo/yii3-ab-testing-outbox composer:2 sh -c '
-  git config --global --add safe.directory "*";
-  composer config repositories.core "{\"type\":\"path\",\"url\":\"../yii3-outbox\",\"options\":{\"versions\":{\"rasuvaeff/yii3-outbox\":\"1.0.0\"}}}";
-  composer update -q;
-  git checkout composer.json;
-  rm -f composer.lock'
-
-# build
-docker run --rm -v "$REPO_ROOT":/repo -w /repo/yii3-ab-testing-outbox composer:2 composer build
+docker run --rm -v "$PWD":/app -w /app composer:2 composer build
+docker run --rm -v "$PWD":/app -w /app composer:2 composer cs:fix
+docker run --rm -v "$PWD":/app -w /app composer:2 composer psalm
+docker run --rm -v "$PWD":/app -w /app composer:2 composer test
+docker run --rm -v "$PWD":/app -w /app composer:2 composer release-check
 ```
-
-`rasuvaeff/yii3-ab-testing` resolves from Packagist (published). `composer.json`
-keeps a clean Packagist `^1.0` constraint for `yii3-outbox` with no committed
-`repositories` block. GitHub CI is red until `yii3-outbox` is on Packagist —
-expected. `composer.lock` is gitignored (library).
 
 Or with Make:
 
@@ -74,6 +62,7 @@ make mutation
 make release-check
 ```
 
+`composer.lock` is gitignored (library).
 `make test-coverage` and `make mutation` bootstrap `pcov` inside the
 `composer:2` container because the base image has no coverage driver.
 
