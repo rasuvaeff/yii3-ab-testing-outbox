@@ -35,6 +35,7 @@
         "infection/infection": "^0.33",
         "maglnet/composer-require-checker": "^4.17",
         "rasuvaeff/clickhouse-toolkit": "^1.6",
+        "rasuvaeff/rector-named-literals": "^1.0",
         "rasuvaeff/yii3-ab-testing-clickhouse": "^2.0",
         "rasuvaeff/yii3-outbox-clickhouse": "^1.2",
         "rasuvaeff/yii3-outbox-db": "^2.0",

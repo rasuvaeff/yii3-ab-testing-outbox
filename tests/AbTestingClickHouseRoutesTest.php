@@ -56,8 +56,8 @@ final class AbTestingClickHouseRoutesTest
         $map = AbTestingClickHouseRoutes::map();
 
         foreach (['ab.exposure', 'ab.conversion'] as $type) {
-            Assert::false(\in_array('v', $map[$type]['columns'], true));
-            Assert::false(\in_array('ingested_at', $map[$type]['columns'], true));
+            Assert::false(\in_array('v', $map[$type]['columns'], strict: true));
+            Assert::false(\in_array('ingested_at', $map[$type]['columns'], strict: true));
         }
     }
 
