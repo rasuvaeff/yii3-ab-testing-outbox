@@ -37,6 +37,7 @@ use Yiisoft\Db\Cache\SchemaCache;
 use Yiisoft\Db\Connection\ConnectionInterface;
 use Yiisoft\Db\Migration\Informer\NullMigrationInformer;
 use Yiisoft\Db\Migration\MigrationBuilder;
+use Yiisoft\Db\Migration\RevertibleMigrationInterface;
 use Yiisoft\Db\Sqlite\Connection as SqliteConnection;
 use Yiisoft\Db\Sqlite\Driver as SqliteDriver;
 use Yiisoft\Test\Support\Clock\StaticClock;
@@ -69,10 +70,7 @@ final class DurableClickHousePipelineTest
             schemaCache: new SchemaCache(psrCache: new MemorySimpleCache()),
         );
         $this->db->open();
-        (new M260611000000CreateOutboxTable())->up(new MigrationBuilder(
-            db: $this->db,
-            informer: new NullMigrationInformer(),
-        ));
+        $this->migrateOutboxTable($this->db);
 
         $this->clientFactory = new ClickHouseClientFactory(new ClickHouseConfig(
             host: $host,
@@ -199,6 +197,33 @@ final class DurableClickHousePipelineTest
         Assert::same($conversion['goal'], 'purchase');
         Assert::same($conversion['exposure_event_id'], 'exposure-1');
         Assert::same($conversion['dimensions'], '{"country":"RU"}');
+    }
+
+    /**
+     * Applies the dependency's whole migration chain, discovered rather than
+     * listed. A hand-picked subset drifts the moment `yii3-outbox-db` adds a
+     * column its storage writes: this test applied only the create-table
+     * migration and broke against 2.2.0, where `DbOutboxStorage::save()` writes
+     * the `claimed_at` column that `M260820000000AddOutboxClaimedAt` adds.
+     * Discovery keeps the schema tracking the installed version, so the
+     * `Prefer lowest` resolution (2.0.x, one migration, no `claimed_at`) and the
+     * newest one both work without a `require-dev` floor bump.
+     */
+    private function migrateOutboxTable(ConnectionInterface $db): void
+    {
+        $reflection = new \ReflectionClass(M260611000000CreateOutboxTable::class);
+        $directory = \dirname((string) $reflection->getFileName());
+        $namespace = $reflection->getNamespaceName();
+        $files = glob($directory . '/M*.php') ?: [];
+        sort($files);
+
+        $builder = new MigrationBuilder(db: $db, informer: new NullMigrationInformer());
+
+        foreach ($files as $file) {
+            /** @var class-string<RevertibleMigrationInterface> $class */
+            $class = $namespace . '\\' . basename($file, '.php');
+            (new $class())->up($builder);
+        }
     }
 
     private function env(string $name, string $default): string
