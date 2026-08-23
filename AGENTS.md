@@ -75,6 +75,18 @@ CI.
 
 ## Invariants & gotchas
 
+- **Integration tests apply the dependency's whole migration chain, never a
+  hand-picked one.** `DurableClickHousePipelineTest` discovers the migrations of
+  `rasuvaeff/yii3-outbox-db` by reflecting on the namespace directory and
+  applying every `M*.php` in name order. Listing one class froze the test schema
+  at the shape the dependency had when the test was written: 2.2.0 added
+  `claimed_at`, `DbOutboxStorage::save()` started writing it, and the job broke
+  on `master` without a single change in this package. Discovery also keeps the
+  `require-dev` floor at `^2.0`, so `Prefer lowest` resolves one migration and
+  the newest resolves two, both green.
+- **The pipeline job skips itself without `CLICKHOUSE_HOST`.** A green
+  `composer build` says nothing about it — run the Integration suite against a
+  live container (recipe in the root `AGENTS.md`) before claiming it works.
 - Message types are fixed `ab.exposure` / `ab.conversion`
   (`AbTestingOutboxEventType`).
 - v2 routes target `ab_exposures_v2` / `ab_conversions_v2`, owned by

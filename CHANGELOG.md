@@ -2,8 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+- `DurableClickHousePipelineTest` applied only the create-table migration of `rasuvaeff/yii3-outbox-db`, so the test schema drifted from the dependency: against 2.2.0, where `DbOutboxStorage::save()` writes the `claimed_at` column added by `M260820000000AddOutboxClaimedAt`, the `Durable ClickHouse pipeline` job failed with `table outbox has no column named claimed_at` ([#20](https://github.com/rasuvaeff/yii3-ab-testing-outbox/issues/20)). The test now discovers and applies the dependency's whole migration chain, so it tracks whatever version is resolved — the `require-dev` floor stays `^2.0` and `Prefer lowest` keeps passing.
+
 ### Changed
 
+- `release.yml` now refuses to publish a GitHub Release for a tag that is not an ancestor of `master` or whose matrix build never went green, and matches the changelog heading as text rather than as a regular expression.
 - Adopt `rasuvaeff/rector-named-literals` and apply the named-argument rule to literal calls (development tooling only; no runtime behaviour changes).
 
 ## 2.0.0 — 2026-08-01
