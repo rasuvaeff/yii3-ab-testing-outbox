@@ -101,9 +101,9 @@ CI.
   must carry the original value: the ClickHouse partition key is derived from
   it, so a re-stamped event lands in a different partition and cannot be
   deduplicated.
-- Aggregate ids are pseudonymous by default and must never contain raw
-  `subject_id`. Inject a private secret in production or a custom
-  `AggregateIdStrategyInterface`.
+- Aggregate ids are pseudonymous and must never contain raw `subject_id`.
+  `PseudonymousAggregateIdStrategy` requires a non-empty private secret; inject
+  one in production or provide a custom `AggregateIdStrategyInterface`.
 
 - `config/di.php` builds one message factory from the `aggregateIdSecret` param
   and injects it into both trackers.

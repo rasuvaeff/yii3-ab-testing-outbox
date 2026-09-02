@@ -34,7 +34,7 @@ final readonly class DefaultAbTestingOutboxMessageFactory implements AbTestingOu
     public const int PAYLOAD_VERSION = CanonicalEventSerializer::SCHEMA_VERSION;
 
     public function __construct(
-        private AggregateIdStrategyInterface $aggregateIdStrategy = new PseudonymousAggregateIdStrategy(),
+        private AggregateIdStrategyInterface $aggregateIdStrategy,
         private EventSerializer $serializer = new CanonicalEventSerializer(),
     ) {}
 

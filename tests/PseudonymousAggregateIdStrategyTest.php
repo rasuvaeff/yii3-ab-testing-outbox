@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Rasuvaeff\Yii3AbTestingOutbox\PseudonymousAggregateIdStrategy;
 use Testo\Assert;
+use Testo\Assert\ExpectException;
 use Testo\Codecov\Covers;
 use Testo\Test;
 
@@ -31,7 +32,7 @@ final class PseudonymousAggregateIdStrategyTest
 
     public function eventKindsAndConversionGoalsUseSeparateIds(): void
     {
-        $strategy = new PseudonymousAggregateIdStrategy();
+        $strategy = new PseudonymousAggregateIdStrategy(secret: 'application-secret');
 
         Assert::false($strategy->exposure(Events::exposure()) === $strategy->conversion(Events::conversion()));
         Assert::false(
@@ -42,7 +43,7 @@ final class PseudonymousAggregateIdStrategyTest
 
     public function idsCarryTheEventKindAsALeadingPrefix(): void
     {
-        $strategy = new PseudonymousAggregateIdStrategy();
+        $strategy = new PseudonymousAggregateIdStrategy(secret: 'application-secret');
 
         Assert::same(substr($strategy->exposure(Events::exposure()), 0, 9), 'exposure:');
         Assert::same(substr($strategy->conversion(Events::conversion()), 0, 11), 'conversion:');
@@ -50,7 +51,7 @@ final class PseudonymousAggregateIdStrategyTest
 
     public function differentExperimentsNeverShareAnId(): void
     {
-        $strategy = new PseudonymousAggregateIdStrategy();
+        $strategy = new PseudonymousAggregateIdStrategy(secret: 'application-secret');
 
         Assert::false(
             $strategy->exposure(Events::exposure(experiment: 'checkout'))
@@ -69,7 +70,7 @@ final class PseudonymousAggregateIdStrategyTest
      */
     public function idsIgnoreEventIdentityAndTime(): void
     {
-        $strategy = new PseudonymousAggregateIdStrategy();
+        $strategy = new PseudonymousAggregateIdStrategy(secret: 'application-secret');
 
         Assert::same(
             $strategy->exposure(Events::exposure(eventId: 'evt-1')),
@@ -78,5 +79,11 @@ final class PseudonymousAggregateIdStrategyTest
                 occurredAt: new DateTimeImmutable('2027-01-01 00:00:00', new DateTimeZone('UTC')),
             )),
         );
+    }
+
+    #[ExpectException(\InvalidArgumentException::class)]
+    public function rejectsAnEmptySecret(): void
+    {
+        new PseudonymousAggregateIdStrategy(secret: '   ');
     }
 }

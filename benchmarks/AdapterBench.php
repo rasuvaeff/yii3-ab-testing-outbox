@@ -12,6 +12,7 @@ use Rasuvaeff\Yii3AbTesting\DecisionReason;
 use Rasuvaeff\Yii3AbTesting\ExposureEvent;
 use Rasuvaeff\Yii3AbTestingOutbox\AbTestingOutboxPayload;
 use Rasuvaeff\Yii3AbTestingOutbox\DefaultAbTestingOutboxMessageFactory;
+use Rasuvaeff\Yii3AbTestingOutbox\PseudonymousAggregateIdStrategy;
 use Testo\Bench;
 
 final class AdapterBench
@@ -25,7 +26,7 @@ final class AdapterBench
     )]
     public static function buildExposure(): AbTestingOutboxPayload
     {
-        return (new DefaultAbTestingOutboxMessageFactory())->exposure(new ExposureEvent(
+        return self::factory()->exposure(new ExposureEvent(
             eventId: 'exposure-1',
             occurredAt: self::time(),
             experiment: 'checkout-button',
@@ -38,7 +39,7 @@ final class AdapterBench
 
     public static function buildConversion(): AbTestingOutboxPayload
     {
-        return (new DefaultAbTestingOutboxMessageFactory())->conversion(new ConversionEvent(
+        return self::factory()->conversion(new ConversionEvent(
             eventId: 'conversion-1',
             occurredAt: self::time(),
             experiment: 'checkout-button',
@@ -53,5 +54,12 @@ final class AdapterBench
     private static function time(): DateTimeImmutable
     {
         return new DateTimeImmutable('2026-08-01 10:00:00.123', new DateTimeZone('UTC'));
+    }
+
+    private static function factory(): DefaultAbTestingOutboxMessageFactory
+    {
+        return new DefaultAbTestingOutboxMessageFactory(
+            aggregateIdStrategy: new PseudonymousAggregateIdStrategy(secret: 'benchmark-secret'),
+        );
     }
 }

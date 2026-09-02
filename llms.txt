@@ -28,9 +28,10 @@ make mutation
   non-scalar payload fields.
 - The context allow-list and the clock live in the CORE now, configured on the
   AbTesting facade so every delivery path filters identically.
-- Default aggregate ids are pseudonymous `exposure:<digest>` /
-  `conversion:<digest>`. Inject a secret into `PseudonymousAggregateIdStrategy`
-  in production or replace `AggregateIdStrategyInterface`.
+- Aggregate ids are pseudonymous `exposure:<digest>` / `conversion:<digest>`.
+  `PseudonymousAggregateIdStrategy` requires a non-empty secret and throws
+  `InvalidArgumentException` for blank input; replace `AggregateIdStrategyInterface`
+  for a custom grouping policy.
 - Trackers take core events (ExposureEvent/ConversionEvent), not an Assignment.
   There is no `eventId` argument: the core minted it, and the tracker writes it
   into the payload AND passes it to `Outbox::record(id: …)`. They must stay
@@ -57,11 +58,16 @@ make mutation
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxExposureTracker;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxConversionTracker;
 use Rasuvaeff\Yii3AbTestingOutbox\AbTestingClickHouseRoutes;
+use Rasuvaeff\Yii3AbTestingOutbox\DefaultAbTestingOutboxMessageFactory;
+use Rasuvaeff\Yii3AbTestingOutbox\PseudonymousAggregateIdStrategy;
 use Rasuvaeff\Yii3Outbox\Outbox;
 
 $outbox = new Outbox(storage: $storage, clock: $clock);
-$exposure = new OutboxExposureTracker($outbox);
-$conversion = new OutboxConversionTracker($outbox);
+$factory = new DefaultAbTestingOutboxMessageFactory(
+    aggregateIdStrategy: new PseudonymousAggregateIdStrategy(secret: $appSecret),
+);
+$exposure = new OutboxExposureTracker($outbox, $factory);
+$conversion = new OutboxConversionTracker($outbox, $factory);
 
 // The facade mints the event and calls the tracker.
 $event = $ab->trackExposure($assignment);
@@ -89,20 +95,6 @@ Custom serialization: implement `AbTestingOutboxMessageFactoryInterface`
 
 Conversion adds `"goal":"purchase"`. `v` is transport-meta only — not exported to ClickHouse.
 
-## Context policy
-
-```php
-$policy = new AllowListAnalyticsContextPolicy(
-    allowedAttributes: ['country', 'email'],
-    renamedAttributes: ['country' => 'market'],
-    redactedAttributes: ['email'],
-);
-$factory = new DefaultAbTestingOutboxMessageFactory(
-    aggregateIdStrategy: new PseudonymousAggregateIdStrategy(secret: $appSecret),
-    contextPolicy: $policy,
-);
-```
-
-The config-plugin accepts the same policy through
-`rasuvaeff/yii3-ab-testing-outbox.aggregateIdSecret` and `context` keys
-(`allowedAttributes`, `renamedAttributes`, `redactedAttributes`).
+The config-plugin requires the application param
+`rasuvaeff/yii3-ab-testing-outbox.aggregateIdSecret` to be a non-empty string;
+missing or blank values throw `InvalidArgumentException` while building DI.

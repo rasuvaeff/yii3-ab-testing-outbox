@@ -22,7 +22,7 @@ final readonly class OutboxExposureTracker implements ExposureTracker
 {
     public function __construct(
         private Outbox $outbox,
-        private AbTestingOutboxMessageFactoryInterface $messageFactory = new DefaultAbTestingOutboxMessageFactory(),
+        private AbTestingOutboxMessageFactoryInterface $messageFactory,
     ) {}
 
     #[\Override]

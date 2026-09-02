@@ -27,7 +27,9 @@ final class DefaultAbTestingOutboxMessageFactoryTest
     #[BeforeTest]
     public function setUp(): void
     {
-        $this->factory = new DefaultAbTestingOutboxMessageFactory();
+        $this->factory = new DefaultAbTestingOutboxMessageFactory(
+            aggregateIdStrategy: new PseudonymousAggregateIdStrategy(secret: 'test-secret'),
+        );
     }
 
     public function buildsExposurePayload(): void

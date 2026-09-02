@@ -6,7 +6,9 @@ namespace Rasuvaeff\Yii3AbTestingOutbox\Tests;
 
 use DateTimeImmutable;
 use Rasuvaeff\Yii3AbTesting\FlushableTracker;
+use Rasuvaeff\Yii3AbTestingOutbox\DefaultAbTestingOutboxMessageFactory;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxExposureTracker;
+use Rasuvaeff\Yii3AbTestingOutbox\PseudonymousAggregateIdStrategy;
 use Rasuvaeff\Yii3Outbox\InMemoryStorage;
 use Rasuvaeff\Yii3Outbox\Outbox;
 use Testo\Assert;
@@ -31,6 +33,8 @@ final class OutboxExposureTrackerTest
         $this->tracker = new OutboxExposureTracker(new Outbox(
             storage: $this->storage,
             clock: new StaticClock(new DateTimeImmutable('2026-06-11 12:00:00')),
+        ), new DefaultAbTestingOutboxMessageFactory(
+            aggregateIdStrategy: new PseudonymousAggregateIdStrategy(secret: 'test-secret'),
         ));
     }
 
