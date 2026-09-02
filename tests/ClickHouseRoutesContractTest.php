@@ -6,6 +6,7 @@ namespace Rasuvaeff\Yii3AbTestingOutbox\Tests;
 
 use Rasuvaeff\Yii3AbTestingOutbox\AbTestingClickHouseRoutes;
 use Rasuvaeff\Yii3AbTestingOutbox\DefaultAbTestingOutboxMessageFactory;
+use Rasuvaeff\Yii3AbTestingOutbox\PseudonymousAggregateIdStrategy;
 use Testo\Assert;
 use Testo\Codecov\CoversNothing;
 use Testo\Test;
@@ -30,7 +31,7 @@ final class ClickHouseRoutesContractTest
 {
     public function exposurePayloadFieldsMatchTheRouteColumns(): void
     {
-        $payload = (new DefaultAbTestingOutboxMessageFactory())->exposure(Events::exposure());
+        $payload = $this->factory()->exposure(Events::exposure());
 
         Assert::same(
             $this->routedFields($payload->payload),
@@ -40,7 +41,7 @@ final class ClickHouseRoutesContractTest
 
     public function conversionPayloadFieldsMatchTheRouteColumns(): void
     {
-        $payload = (new DefaultAbTestingOutboxMessageFactory())->conversion(Events::conversion());
+        $payload = $this->factory()->conversion(Events::conversion());
 
         Assert::same(
             $this->routedFields($payload->payload),
@@ -54,7 +55,7 @@ final class ClickHouseRoutesContractTest
      */
     public function everyPayloadFieldIsScalar(): void
     {
-        $factory = new DefaultAbTestingOutboxMessageFactory();
+        $factory = $this->factory();
 
         foreach ([
             $factory->exposure(Events::exposure(dimensions: ['country' => 'RU'])),
@@ -78,6 +79,13 @@ final class ClickHouseRoutesContractTest
             array_keys($this->decode($json)),
             static fn(string $field): bool => $field !== 'v',
         ));
+    }
+
+    private function factory(): DefaultAbTestingOutboxMessageFactory
+    {
+        return new DefaultAbTestingOutboxMessageFactory(
+            aggregateIdStrategy: new PseudonymousAggregateIdStrategy(secret: 'test-secret'),
+        );
     }
 
     /**

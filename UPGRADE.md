@@ -1,5 +1,37 @@
 # Upgrade guide
 
+## 2.x -> 3.0
+
+Version 3.0 removes the insecure empty-secret default for pseudonymous
+aggregate ids. Configure a private, non-empty secret before booting the
+application:
+
+```php
+// config/params.php
+return [
+    'rasuvaeff/yii3-ab-testing-outbox' => [
+        'aggregateIdSecret' => $_ENV['AB_AGGREGATE_SECRET'],
+    ],
+];
+```
+
+The config-plugin throws `InvalidArgumentException` during DI construction when
+the key is absent, not a string, empty, or whitespace-only. Do not commit the
+secret; load it from the deployment secret store.
+
+If you construct the producer classes directly, pass dependencies explicitly:
+
+```php
+$strategy = new PseudonymousAggregateIdStrategy(secret: $appSecret);
+$factory = new DefaultAbTestingOutboxMessageFactory(aggregateIdStrategy: $strategy);
+$exposure = new OutboxExposureTracker($outbox, $factory);
+$conversion = new OutboxConversionTracker($outbox, $factory);
+```
+
+Applications that intentionally use a different aggregate-id policy can
+continue to implement `AggregateIdStrategyInterface`; that implementation is
+responsible for its own privacy guarantees.
+
 ## 1.x → 2.0
 
 The payload becomes the canonical analytics event of schema v2, and the routes

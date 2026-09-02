@@ -13,6 +13,7 @@ use Rasuvaeff\Yii3Outbox\InMemoryStorage;
 use Rasuvaeff\Yii3Outbox\Outbox;
 use Testo\Assert;
 use Testo\Codecov\CoversNothing;
+use Testo\Expect;
 use Testo\Test;
 use Yiisoft\Test\Support\Clock\StaticClock;
 
@@ -57,16 +58,45 @@ final class ConfigWiringTest
         Assert::same($overlap, []);
     }
 
+    public function factoryRejectsMissingSecret(): void
+    {
+        $factory = $this->loadDi(params: ['rasuvaeff/yii3-ab-testing-outbox' => []])[
+            AbTestingOutboxMessageFactoryInterface::class
+        ];
+
+        Expect::exception(\InvalidArgumentException::class)
+            ->withMessage('rasuvaeff/yii3-ab-testing-outbox.aggregateIdSecret must be a non-empty string');
+
+        $factory();
+    }
+
+    public function factoryRejectsNonStringSecret(): void
+    {
+        $factory = $this->loadDi(params: ['rasuvaeff/yii3-ab-testing-outbox' => ['aggregateIdSecret' => 123]])[
+            AbTestingOutboxMessageFactoryInterface::class
+        ];
+
+        Expect::exception(\InvalidArgumentException::class)
+            ->withMessage('rasuvaeff/yii3-ab-testing-outbox.aggregateIdSecret must be a non-empty string');
+
+        $factory();
+    }
+
     /**
      * @return array<string, mixed>
      */
-    private function loadDi(): array
+    private function loadDi(?array $params = null): array
     {
-        return (static function (): array {
-            $params = require dirname(__DIR__, 2) . '/config/params.php';
+        return (static function (?array $params): array {
+            $providedParams = $params !== null;
+            $params ??= require dirname(__DIR__, 2) . '/config/params.php';
+
+            if (!$providedParams) {
+                $params['rasuvaeff/yii3-ab-testing-outbox']['aggregateIdSecret'] = 'test-secret';
+            }
 
             return require dirname(__DIR__, 2) . '/config/di.php';
-        })();
+        })($params);
     }
 
     /**

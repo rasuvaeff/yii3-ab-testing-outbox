@@ -33,8 +33,8 @@ a worker exports the outbox asynchronously (e.g. with `yii3-outbox-clickhouse`).
 ## Requirements
 
 - PHP 8.3+
-- `rasuvaeff/yii3-ab-testing` ^1.2
-- `rasuvaeff/yii3-outbox` ^1.0
+- `rasuvaeff/yii3-ab-testing` ^2.0
+- `rasuvaeff/yii3-outbox` ^1.2
 - `psr/clock` ^1.0
 
 ## Installation
@@ -54,13 +54,18 @@ composer require rasuvaeff/yii3-outbox-db rasuvaeff/yii3-outbox-clickhouse
 
 ```php
 use Rasuvaeff\Yii3AbTesting\AbTesting;
+use Rasuvaeff\Yii3AbTestingOutbox\DefaultAbTestingOutboxMessageFactory;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxConversionTracker;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxExposureTracker;
+use Rasuvaeff\Yii3AbTestingOutbox\PseudonymousAggregateIdStrategy;
 use Rasuvaeff\Yii3Outbox\Outbox;
 
 $outbox = new Outbox(storage: $storage, clock: $clock);   // storage from yii3-outbox-db
-$exposureTracker = new OutboxExposureTracker($outbox);
-$conversionTracker = new OutboxConversionTracker($outbox);
+$messageFactory = new DefaultAbTestingOutboxMessageFactory(
+    aggregateIdStrategy: new PseudonymousAggregateIdStrategy(secret: $_ENV['AB_AGGREGATE_SECRET']),
+);
+$exposureTracker = new OutboxExposureTracker($outbox, $messageFactory);
+$conversionTracker = new OutboxConversionTracker($outbox, $messageFactory);
 
 $assignment = $abTesting->assign(experiment: 'checkout', subjectId: $userId);
 // The facade mints the event and calls the tracker; its identity travels
@@ -107,10 +112,11 @@ the upgrade.
 
 ### Identity and retries
 
-The default `PseudonymousAggregateIdStrategy` emits stable HMAC-SHA-256 ids such
-as `exposure:<digest>` and never copies raw `subject_id` into the top-level
-outbox column. Inject an application secret to resist offline guessing, or
-implement `AggregateIdStrategyInterface` for a domain-specific grouping policy.
+The `PseudonymousAggregateIdStrategy` emits stable HMAC-SHA-256 ids such as
+`exposure:<digest>` and never copies raw `subject_id` into the top-level outbox
+column. Its constructor requires a non-empty application secret; an empty or
+whitespace-only value throws `InvalidArgumentException`. Implement
+`AggregateIdStrategyInterface` for a domain-specific grouping policy.
 
 The default config-plugin factory is configured through application params:
 
@@ -190,9 +196,9 @@ return [
   Pseudonymous aggregate ids only reduce its footprint in top-level outbox
   metadata; they do not anonymize the event. Pseudonymize before `Assignment`
   when the analytics payload itself must not contain the original identifier.
-- Always inject a private aggregate-id secret in production. The empty-secret
-  default is deterministic and prevents accidental raw-value disclosure, but
-  does not resist dictionary attacks on predictable subject ids.
+- Always inject a private, non-empty aggregate-id secret. The package fails fast
+  during construction and config-plugin wiring when the secret is absent or
+  blank, preventing an insecure deterministic default from reaching production.
 - Context attributes are denied by default. Use a short allow-list, avoid
   secrets and high-cardinality values, and redact before the payload reaches
   outbox storage.

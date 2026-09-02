@@ -36,8 +36,8 @@
 ## Требования
 
 - PHP 8.3+
-- `rasuvaeff/yii3-ab-testing` ^1.2
-- `rasuvaeff/yii3-outbox` ^1.0
+- `rasuvaeff/yii3-ab-testing` ^2.0
+- `rasuvaeff/yii3-outbox` ^1.2
 - `psr/clock` ^1.0
 
 ## Установка
@@ -57,13 +57,18 @@ composer require rasuvaeff/yii3-outbox-db rasuvaeff/yii3-outbox-clickhouse
 
 ```php
 use Rasuvaeff\Yii3AbTesting\AbTesting;
+use Rasuvaeff\Yii3AbTestingOutbox\DefaultAbTestingOutboxMessageFactory;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxConversionTracker;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxExposureTracker;
+use Rasuvaeff\Yii3AbTestingOutbox\PseudonymousAggregateIdStrategy;
 use Rasuvaeff\Yii3Outbox\Outbox;
 
 $outbox = new Outbox(storage: $storage, clock: $clock);   // storage from yii3-outbox-db
-$exposureTracker = new OutboxExposureTracker($outbox);
-$conversionTracker = new OutboxConversionTracker($outbox);
+$messageFactory = new DefaultAbTestingOutboxMessageFactory(
+    aggregateIdStrategy: new PseudonymousAggregateIdStrategy(secret: $_ENV['AB_AGGREGATE_SECRET']),
+);
+$exposureTracker = new OutboxExposureTracker($outbox, $messageFactory);
+$conversionTracker = new OutboxConversionTracker($outbox, $messageFactory);
 
 $assignment = $abTesting->assign(experiment: 'checkout', subjectId: $userId);
 // Фасад минтит событие и вызывает трекер; идентичность едет вместе с ним,
@@ -109,10 +114,11 @@ $ab->trackConversion($assignment, goal: 'purchase', exposure: $exposure);
 
 ### Идентичность и повторы
 
-Стандартный `PseudonymousAggregateIdStrategy` выдаёт стабильные HMAC-SHA-256 id
-вида `exposure:<digest>` и не копирует raw `subject_id` в top-level колонку
-outbox. Передайте секрет приложения для защиты от offline-перебора либо
-реализуйте `AggregateIdStrategyInterface` для своей политики группировки.
+`PseudonymousAggregateIdStrategy` выдаёт стабильные HMAC-SHA-256 id вида
+`exposure:<digest>` и не копирует raw `subject_id` в top-level колонку outbox.
+Конструктор требует непустой секрет приложения; пустое или состоящее из пробелов
+значение вызывает `InvalidArgumentException`. Для своей политики группировки
+реализуйте `AggregateIdStrategyInterface`.
 
 Стандартная config-plugin factory настраивается через params приложения:
 
@@ -194,9 +200,10 @@ return [
   Псевдонимный aggregate id только уменьшает его присутствие в top-level
   метаданных outbox, но не анонимизирует событие. Псевдонимизируйте значение до
   `Assignment`, если payload не должен содержать исходный идентификатор.
-- В production всегда передавайте приватный aggregate-id secret. Стандартное
-  пустое значение детерминировано и предотвращает случайную публикацию raw id,
-  но не защищает предсказуемые subject id от словарного перебора.
+- Всегда передавайте приватный непустой aggregate-id secret. Пакет немедленно
+  выбрасывает исключение при создании стратегии или config-plugin wiring, если
+  секрет отсутствует или состоит из пробелов, поэтому небезопасный default не
+  попадёт в production.
 - Атрибуты context запрещены по умолчанию. Используйте короткий allow-list,
   исключите секреты и высококардинальные значения, редактируйте их до записи в
   outbox storage.

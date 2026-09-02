@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.0.0 — 2026-09-02
+
+### Breaking
+
+- `PseudonymousAggregateIdStrategy` now requires a non-empty secret argument and
+  throws `InvalidArgumentException` for blank values.
+- `DefaultAbTestingOutboxMessageFactory`, `OutboxExposureTracker`, and
+  `OutboxConversionTracker` no longer construct an implicit aggregate-id
+  strategy or message factory. Pass them explicitly, or use the config-plugin.
+- The config-plugin now fails fast with `InvalidArgumentException` when
+  `rasuvaeff/yii3-ab-testing-outbox.aggregateIdSecret` is missing or blank.
+
+See [UPGRADE.md](UPGRADE.md) for migration steps.
+
 ## 2.0.1 — 2026-08-23
 
 ### Fixed

@@ -39,9 +39,9 @@ It does NOT export to ClickHouse, read the outbox, run a worker, or batch.
 5. **Trackers are NOT flushable.** `Outbox::record()` persists immediately;
    there is no request-local buffer. Do not implement `FlushableTracker`.
 
-6. **Aggregate ids must never contain a raw `subject_id`.** The default strategy
-   is pseudonymous; inject a private secret in production or offline guessing
-   from an experiment name plus a subject id is practical.
+6. **Aggregate ids must never contain a raw `subject_id`.** The pseudonymous
+   strategy requires a non-empty private secret; blank input throws, preventing
+   offline guessing from an experiment name plus a subject id.
 
 ## The v1 → v2 migration window is the sharp edge
 

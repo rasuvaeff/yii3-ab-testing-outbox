@@ -4,20 +4,28 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3AbTestingOutbox;
 
+use InvalidArgumentException;
 use Rasuvaeff\Yii3AbTesting\ConversionEvent;
 use Rasuvaeff\Yii3AbTesting\ExposureEvent;
 
 /**
- * Deterministic aggregate ids that never contain the raw subject id. Inject an
- * application secret to make offline guessing impractical.
+ * Deterministic aggregate ids that never contain the raw subject id.
  *
  * @api
  */
 final readonly class PseudonymousAggregateIdStrategy implements AggregateIdStrategyInterface
 {
+    /**
+     * @param non-empty-string $secret
+     */
     public function __construct(
-        private string $secret = '',
-    ) {}
+        private string $secret,
+    ) {
+        if (trim($secret) === '') {
+
+            throw new InvalidArgumentException('Aggregate id secret must be non-empty');
+        }
+    }
 
     #[\Override]
     public function exposure(ExposureEvent $event): string

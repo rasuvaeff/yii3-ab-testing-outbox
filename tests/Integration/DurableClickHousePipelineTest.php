@@ -21,6 +21,7 @@ use Rasuvaeff\Yii3AbTestingOutbox\AbTestingClickHouseRoutes;
 use Rasuvaeff\Yii3AbTestingOutbox\DefaultAbTestingOutboxMessageFactory;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxConversionTracker;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxExposureTracker;
+use Rasuvaeff\Yii3AbTestingOutbox\PseudonymousAggregateIdStrategy;
 use Rasuvaeff\Yii3Outbox\Outbox;
 use Rasuvaeff\Yii3Outbox\RetryPolicy;
 use Rasuvaeff\Yii3OutboxClickHouse\ClickHouseOutboxExporter;
@@ -124,7 +125,9 @@ final class DurableClickHousePipelineTest
         $occurredAt = new DateTimeImmutable('2026-07-29 10:00:00.123', new DateTimeZone('UTC'));
         $storage = new DbOutboxStorage(db: $this->db);
         $outbox = new Outbox(storage: $storage, clock: $clock);
-        $messageFactory = new DefaultAbTestingOutboxMessageFactory();
+        $messageFactory = new DefaultAbTestingOutboxMessageFactory(
+            aggregateIdStrategy: new PseudonymousAggregateIdStrategy(secret: 'test-secret'),
+        );
 
         $exposureEvent = new ExposureEvent(
             eventId: 'exposure-1',

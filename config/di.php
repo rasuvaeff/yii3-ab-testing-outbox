@@ -16,6 +16,14 @@ use Rasuvaeff\Yii3Outbox\Outbox;
 return [
     AbTestingOutboxMessageFactoryInterface::class => static function () use ($params): AbTestingOutboxMessageFactoryInterface {
         $config = $params['rasuvaeff/yii3-ab-testing-outbox'] ?? [];
+        $secret = $config['aggregateIdSecret'] ?? null;
+
+        if (!is_string($secret) || trim($secret) === '') {
+
+            throw new \InvalidArgumentException(
+                'rasuvaeff/yii3-ab-testing-outbox.aggregateIdSecret must be a non-empty string',
+            );
+        }
 
         // The context allow-list moved to the core in 2.0: it is applied once,
         // when the facade builds the event, so every delivery path filters
@@ -23,7 +31,7 @@ return [
         // path only.
         return new DefaultAbTestingOutboxMessageFactory(
             aggregateIdStrategy: new PseudonymousAggregateIdStrategy(
-                secret: (string) ($config['aggregateIdSecret'] ?? ''),
+                secret: $secret,
             ),
         );
     },

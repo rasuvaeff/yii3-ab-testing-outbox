@@ -19,7 +19,7 @@ final readonly class OutboxConversionTracker implements ConversionTracker
 {
     public function __construct(
         private Outbox $outbox,
-        private AbTestingOutboxMessageFactoryInterface $messageFactory = new DefaultAbTestingOutboxMessageFactory(),
+        private AbTestingOutboxMessageFactoryInterface $messageFactory,
     ) {}
 
     #[\Override]

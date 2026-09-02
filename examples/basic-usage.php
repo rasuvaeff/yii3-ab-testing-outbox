@@ -13,6 +13,8 @@ use Rasuvaeff\Yii3AbTesting\WeightedHashAssignmentStrategy;
 use Rasuvaeff\Yii3AbTestingOutbox\AbTestingClickHouseRoutes;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxConversionTracker;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxExposureTracker;
+use Rasuvaeff\Yii3AbTestingOutbox\DefaultAbTestingOutboxMessageFactory;
+use Rasuvaeff\Yii3AbTestingOutbox\PseudonymousAggregateIdStrategy;
 use Rasuvaeff\Yii3Outbox\InMemoryStorage;
 use Rasuvaeff\Yii3Outbox\Outbox;
 
@@ -25,6 +27,9 @@ use Rasuvaeff\Yii3Outbox\Outbox;
  */
 $storage = new InMemoryStorage();
 $outbox = new Outbox(storage: $storage, clock: new SystemClock());
+$messageFactory = new DefaultAbTestingOutboxMessageFactory(
+    aggregateIdStrategy: new PseudonymousAggregateIdStrategy(secret: 'local-example-secret'),
+);
 
 $ab = new AbTesting(
     provider: new ConfigExperimentProvider(config: [
@@ -36,8 +41,8 @@ $ab = new AbTesting(
         ],
     ]),
     strategy: new WeightedHashAssignmentStrategy(),
-    exposureTracker: new OutboxExposureTracker($outbox),
-    conversionTracker: new OutboxConversionTracker($outbox),
+    exposureTracker: new OutboxExposureTracker($outbox, $messageFactory),
+    conversionTracker: new OutboxConversionTracker($outbox, $messageFactory),
     // The allow-list lives on the facade, so every delivery path filters
     // identically. Configured per-adapter it would have covered this one only.
     contextPolicy: new AllowListAnalyticsContextPolicy(allowedAttributes: ['country']),
