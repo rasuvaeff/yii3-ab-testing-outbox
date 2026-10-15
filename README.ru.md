@@ -21,17 +21,26 @@
 > дополнительно получают agent skill этого пакета: он автоматически синкается в
 > `.agents/skills/` при установке.
 
-> Собираете свою комбинацию? Матрица интеграций семейства живёт в ядре:
-> `vendor/rasuvaeff/yii3-ab-testing/docs/integration.ru.md`.
+> **Сайт документации:** [rasuvaeff.github.io/yii3-ab-testing](https://rasuvaeff.github.io/yii3-ab-testing/)
+> охватывает всё семейство, включая
+> [матрицу интеграций](https://rasuvaeff.github.io/yii3-ab-testing/integration)
+> для сборки своей комбинации (на английском).
 
-## Прямой sink vs долговечный pipeline
+## Durable против log shipping
 
-| | Прямой | Долговечный (этот пакет) |
+У семейства два пути доставки, и оба пишут одинаковые строки в таблицы схемы v2
+из `yii3-ab-testing-clickhouse`. Этот пакет — durable-путь.
+
+| | Durable (этот пакет) | Log shipping |
 |---|---|---|
-| Пакет | `yii3-ab-testing-clickhouse` | `yii3-ab-testing-outbox` + `yii3-outbox(-db)` + `yii3-outbox-clickhouse` |
-| Батчинг | на запрос | крупный, меж-запросный |
-| Переживает аварию ClickHouse | нет | да |
-| Настройка | минимальная | воркер + outbox-хранилище |
+| Пакеты | `yii3-ab-testing-outbox` + `yii3-outbox-db` + `yii3-outbox-clickhouse` | `LoggerExposureTracker` / `LoggerConversionTracker` из ядра + Vector / Fluent Bit |
+| Батчинг | крупный, меж-запросный, силами воркера | силами коллектора |
+| Переживает аварию ClickHouse | да | насколько буферизует коллектор |
+| Настройка | воркер + outbox-хранилище | уже работающий конвейер логов |
+
+Прямой writer в ClickHouse из `yii3-ab-testing-clickhouse` 1.x удалён в 2.0:
+под PHP-FPM он вставлял несколько строк на каждый запрос внутри латентности
+посетителя.
 
 ## Требования
 
@@ -67,14 +76,18 @@ $outbox = new Outbox(storage: $storage, clock: $clock);   // storage from yii3-o
 $messageFactory = new DefaultAbTestingOutboxMessageFactory(
     aggregateIdStrategy: new PseudonymousAggregateIdStrategy(secret: $_ENV['AB_AGGREGATE_SECRET']),
 );
-$exposureTracker = new OutboxExposureTracker($outbox, $messageFactory);
-$conversionTracker = new OutboxConversionTracker($outbox, $messageFactory);
+$ab = new AbTesting(
+    provider: $provider,
+    strategy: $strategy,
+    exposureTracker: new OutboxExposureTracker($outbox, $messageFactory),
+    conversionTracker: new OutboxConversionTracker($outbox, $messageFactory),
+);
 
-$assignment = $abTesting->assign(experiment: 'checkout', subjectId: $userId);
+$assignment = $ab->assign(experiment: 'checkout', subjectId: $userId);
 // Фасад минтит событие и вызывает трекер; идентичность едет вместе с ним,
 // поэтому повтор одного доменного события остаётся одной строкой.
 $exposure = $ab->trackExposure($assignment);
-// later, on the goal:
+// позже, при достижении цели:
 $ab->trackConversion($assignment, goal: 'purchase', exposure: $exposure);
 ```
 
@@ -139,58 +152,62 @@ $ab->trackConversion($assignment, goal: 'purchase', exposure: $exposure);
 
 ### Маршрутизация ClickHouse
 
-Пакет поставляет совместимую ClickHouse-схему v1 в `migrations/` и совпадающий с
-ней `AbTestingClickHouseRoutes::map()`. Таблицы по умолчанию называются
-`ab_outbox_exposures` и `ab_outbox_conversions`: они намеренно отличаются от
-несовместимых таблиц direct sink. Каждую строку предваряют две transport-meta
-колонки: `event_id` (экспортёр заполняет её id сообщения для дедупликации через
-`ReplacingMergeTree`) и `event_at` (время события из payload'а).
-
-Примените DDL с теми же именами, которые переданы в route map:
+`AbTestingClickHouseRoutes::map()` — карта маршрутов для `yii3-outbox-clickhouse`.
+Она направляет сообщения в таблицы схемы v2, которыми владеет
+`yii3-ab-testing-clickhouse`, и берёт их имена и порядок колонок из
+`AnalyticsSchemaV2`, а не дублирует их: INSERT перечисляет колонки по позиции,
+и разошедшаяся копия списка молча писала бы значения не в те колонки.
 
 ```php
-use Rasuvaeff\ClickHouseToolkit\ClickHouseMigrationRunner;
+use Rasuvaeff\Yii3AbTestingClickHouse\SchemaMigrations;
 use Rasuvaeff\Yii3AbTestingOutbox\AbTestingClickHouseRoutes;
 
-(new ClickHouseMigrationRunner(
-    client: $clickHouseClient,
-    migrationsPath: __DIR__ . '/vendor/rasuvaeff/yii3-ab-testing-outbox/migrations',
-    placeholders: [
-        'outbox_exposures_table' => AbTestingClickHouseRoutes::EXPOSURES_TABLE,
-        'outbox_conversions_table' => AbTestingClickHouseRoutes::CONVERSIONS_TABLE,
-    ],
-))->run();
+(new SchemaMigrations($clickHouseClient))->apply();   // создаёт ab_exposures_v2 / ab_conversions_v2
 
 $router = new MapClickHouseMessageRouter(routes: AbTestingClickHouseRoutes::map());
 ```
 
-Таблицы используют `ReplacingMergeTree ORDER BY event_id`, поэтому повторная
-доставка одного outbox-сообщения при at-least-once семантике схлопывается во
-время merge в ClickHouse. Время приёма `ingested_at` хранится отдельно от
-payload-поля `event_at`.
+Воркер дренирует outbox командой `./yii outbox:clickhouse:export`.
 
-До 1.2.4 route defaults были `ab_exposures` / `ab_conversions`, но пакет не
-поставлял подходящий DDL, а имена пересекались с другой схемой direct sink.
-Приложения, самостоятельно создавшие совместимые таблицы под старыми именами,
-могут сохранить их, явно передав оба имени в `map()`. Никогда не направляйте
-outbox-строки в таблицы direct-пакета.
+`yii3-ab-testing-clickhouse` указан в `suggest`, а не в `require`: продюсеру,
+который маршрутизирует сообщения не в ClickHouse, пакет схемы не нужен, а без
+него `AbTestingClickHouseRoutes` просто не загружается.
+
+**Обновление с payload'ов 1.x.** Сообщения, поставленные в очередь до
+обновления, несут payload v1 без `decision_reason` и `dimensions`, поэтому в
+таблицы v2 их не записать. `AbTestingClickHouseRoutes::legacyV1Map()` направляет
+их в таблицы v1 `ab_outbox_exposures` / `ab_outbox_conversions`, DDL которых
+ради этого по-прежнему лежит в `migrations/`. Держите обе карты, пока очередь не
+опустеет, — см. [UPGRADE.md](UPGRADE.md).
 
 ### Yii3 DI
 
 `config/di.php` биндит `ExposureTracker` и `ConversionTracker`. Биндите каждый
 из **единственного** источника — установка рядом с другим tracker-бэкендом,
-который тоже их биндит, вызывает ошибку `yiisoft/config` `Duplicate key`. Чтобы
+который тоже их биндит, вызывает ошибку `yiisoft/config` `Duplicate key`.
+Фабрика сообщений, которую он внедряет, биндится здесь же и строится из
+param'а `aggregateIdSecret`. Чтобы
 использовать несколько приёмников одновременно, скомпонуйте их в конфиге
 приложения:
 
 ```php
+use Psr\Log\LoggerInterface;
 use Rasuvaeff\Yii3AbTesting\CompositeExposureTracker;
 use Rasuvaeff\Yii3AbTesting\ExposureTracker;
+use Rasuvaeff\Yii3AbTesting\LoggerExposureTracker;
+use Rasuvaeff\Yii3AbTestingOutbox\AbTestingOutboxMessageFactoryInterface;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxExposureTracker;
+use Rasuvaeff\Yii3Outbox\Outbox;
 
 return [
-    ExposureTracker::class => static fn (Outbox $outbox, LoggerInterface $log): ExposureTracker
-        => new CompositeExposureTracker(new OutboxExposureTracker($outbox), new LoggerExposureTracker($log)),
+    ExposureTracker::class => static fn (
+        Outbox $outbox,
+        AbTestingOutboxMessageFactoryInterface $messageFactory,
+        LoggerInterface $log,
+    ): ExposureTracker => new CompositeExposureTracker(
+        new OutboxExposureTracker($outbox, $messageFactory),
+        new LoggerExposureTracker($log),
+    ),
 ];
 ```
 

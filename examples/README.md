@@ -10,6 +10,7 @@
 docker run --rm -v "$PWD":/app -w /app composer:2 php examples/basic-usage.php
 ```
 
-The printed routes target `ab_outbox_exposures` and
-`ab_outbox_conversions`. Production must apply the matching placeholder-based
-DDL from `migrations/` before starting the exporter; see the main README.
+The printed routes target the schema v2 tables `ab_exposures_v2` and
+`ab_conversions_v2` owned by `yii3-ab-testing-clickhouse`. Production creates
+them with that package's `SchemaMigrations::apply()` before starting the
+exporter; see the main README.
