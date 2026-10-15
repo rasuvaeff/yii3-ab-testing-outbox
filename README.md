@@ -18,17 +18,27 @@ a worker exports the outbox asynchronously (e.g. with `yii3-outbox-clickhouse`).
 > plugin also get this package's agent skill synced into `.agents/skills/`
 > automatically on install.
 
-> Assembling a combination? The family's integration matrix lives in the core:
-> `vendor/rasuvaeff/yii3-ab-testing/docs/integration.md`.
+> **Documentation site:** [rasuvaeff.github.io/yii3-ab-testing](https://rasuvaeff.github.io/yii3-ab-testing/)
+> covers the whole family — including the
+> [integration matrix](https://rasuvaeff.github.io/yii3-ab-testing/integration)
+> for assembling a combination.
 
-## Direct sink vs durable pipeline
+## Durable vs log shipping
 
-| | Direct | Durable (this package) |
+The family has two delivery paths, and both write the same rows into the
+schema v2 tables of `yii3-ab-testing-clickhouse`. This package is the durable
+one.
+
+| | Durable (this package) | Log shipping |
 |---|---|---|
-| Package | `yii3-ab-testing-clickhouse` | `yii3-ab-testing-outbox` + `yii3-outbox(-db)` + `yii3-outbox-clickhouse` |
-| Batching | per request | large, cross-request |
-| Survives ClickHouse outage | no | yes |
-| Setup | minimal | worker + outbox storage |
+| Packages | `yii3-ab-testing-outbox` + `yii3-outbox-db` + `yii3-outbox-clickhouse` | core's `LoggerExposureTracker` / `LoggerConversionTracker` + Vector / Fluent Bit |
+| Batching | large, cross-request, by the worker | by the collector |
+| Survives a ClickHouse outage | yes | as far as the collector buffers |
+| Setup | worker + outbox storage | a log pipeline you already run |
+
+The direct ClickHouse writer that `yii3-ab-testing-clickhouse` 1.x shipped was
+removed in 2.0: under PHP-FPM it inserted a few rows per request inside the
+visitor's latency.
 
 ## Requirements
 
@@ -64,10 +74,14 @@ $outbox = new Outbox(storage: $storage, clock: $clock);   // storage from yii3-o
 $messageFactory = new DefaultAbTestingOutboxMessageFactory(
     aggregateIdStrategy: new PseudonymousAggregateIdStrategy(secret: $_ENV['AB_AGGREGATE_SECRET']),
 );
-$exposureTracker = new OutboxExposureTracker($outbox, $messageFactory);
-$conversionTracker = new OutboxConversionTracker($outbox, $messageFactory);
+$ab = new AbTesting(
+    provider: $provider,
+    strategy: $strategy,
+    exposureTracker: new OutboxExposureTracker($outbox, $messageFactory),
+    conversionTracker: new OutboxConversionTracker($outbox, $messageFactory),
+);
 
-$assignment = $abTesting->assign(experiment: 'checkout', subjectId: $userId);
+$assignment = $ab->assign(experiment: 'checkout', subjectId: $userId);
 // The facade mints the event and calls the tracker; its identity travels
 // with it, so a retry of the same domain event stays one row.
 $exposure = $ab->trackExposure($assignment);
@@ -136,57 +150,61 @@ either, and a mismatch splits one event into two rows that never deduplicate.
 
 ### ClickHouse routing
 
-This package ships a compatible v1 ClickHouse schema in `migrations/` and a
-matching `AbTestingClickHouseRoutes::map()`, which takes its tables and column
-order from `yii3-ab-testing-clickhouse`'s `AnalyticsSchemaV2`. Its tables are
-`ab_outbox_exposures` and `ab_outbox_conversions`, deliberately distinct from
-the incompatible direct-sink tables. Two transport-meta columns lead each row:
-`event_id` (filled by the exporter from the message id, for
-`ReplacingMergeTree` dedup) and `event_at` (event time from the payload).
-
-Apply the DDL with the same names passed to the route map:
+`AbTestingClickHouseRoutes::map()` is the route map for `yii3-outbox-clickhouse`.
+It targets the schema v2 tables owned by `yii3-ab-testing-clickhouse` and takes
+their names and column order from `AnalyticsSchemaV2` rather than restating
+them — an `INSERT` lists columns positionally, so a copied list that drifted
+would write values into the wrong columns without an error.
 
 ```php
-use Rasuvaeff\ClickHouseToolkit\ClickHouseMigrationRunner;
+use Rasuvaeff\Yii3AbTestingClickHouse\SchemaMigrations;
 use Rasuvaeff\Yii3AbTestingOutbox\AbTestingClickHouseRoutes;
 
-(new ClickHouseMigrationRunner(
-    client: $clickHouseClient,
-    migrationsPath: __DIR__ . '/vendor/rasuvaeff/yii3-ab-testing-outbox/migrations',
-    placeholders: [
-        'outbox_exposures_table' => AbTestingClickHouseRoutes::EXPOSURES_TABLE,
-        'outbox_conversions_table' => AbTestingClickHouseRoutes::CONVERSIONS_TABLE,
-    ],
-))->run();
+(new SchemaMigrations($clickHouseClient))->apply();   // creates ab_exposures_v2 / ab_conversions_v2
 
 $router = new MapClickHouseMessageRouter(routes: AbTestingClickHouseRoutes::map());
 ```
 
-The tables use `ReplacingMergeTree ORDER BY event_id`; at-least-once retries of
-the same outbox message therefore collapse during ClickHouse merges. They also
-store `ingested_at` separately from the payload's `event_at`.
+The worker drains the outbox with `./yii outbox:clickhouse:export`.
 
-Before 1.2.4 the route defaults were `ab_exposures` / `ab_conversions`, but this
-package supplied no matching DDL and those names collided with the direct sink's
-different schema. Existing applications that created their own compatible
-tables under the old names can retain them by passing both names explicitly to
-`map()`. Never route outbox rows into the direct package's tables.
+`yii3-ab-testing-clickhouse` is a `suggest`, not a `require`: a producer that
+routes messages somewhere other than ClickHouse does not have to install the
+schema package, and `AbTestingClickHouseRoutes` is simply not loadable without
+it.
+
+**Upgrading from 1.x payloads.** Messages queued before the upgrade carry
+payload v1, which has no `decision_reason` and no `dimensions`, so they cannot
+go into the v2 tables. `AbTestingClickHouseRoutes::legacyV1Map()` routes them
+into the v1 tables `ab_outbox_exposures` / `ab_outbox_conversions`, whose DDL
+still ships in `migrations/` for exactly this. Run both maps until the queue has
+drained — see [UPGRADE.md](UPGRADE.md).
 
 ### Yii3 DI
 
 `config/di.php` binds `ExposureTracker` and `ConversionTracker`. Bind each from a
 **single** source — installing this next to another tracker backend that also
-binds them triggers a `yiisoft/config` `Duplicate key` error. To use several
+binds them triggers a `yiisoft/config` `Duplicate key` error. The message
+factory it injects is bound here too, built from the `aggregateIdSecret` param. To use several
 sinks at once, compose them in your app config:
 
 ```php
+use Psr\Log\LoggerInterface;
 use Rasuvaeff\Yii3AbTesting\CompositeExposureTracker;
 use Rasuvaeff\Yii3AbTesting\ExposureTracker;
+use Rasuvaeff\Yii3AbTesting\LoggerExposureTracker;
+use Rasuvaeff\Yii3AbTestingOutbox\AbTestingOutboxMessageFactoryInterface;
 use Rasuvaeff\Yii3AbTestingOutbox\OutboxExposureTracker;
+use Rasuvaeff\Yii3Outbox\Outbox;
 
 return [
-    ExposureTracker::class => static fn (Outbox $outbox, LoggerInterface $log): ExposureTracker
-        => new CompositeExposureTracker(new OutboxExposureTracker($outbox), new LoggerExposureTracker($log)),
+    ExposureTracker::class => static fn (
+        Outbox $outbox,
+        AbTestingOutboxMessageFactoryInterface $messageFactory,
+        LoggerInterface $log,
+    ): ExposureTracker => new CompositeExposureTracker(
+        new OutboxExposureTracker($outbox, $messageFactory),
+        new LoggerExposureTracker($log),
+    ),
 ];
 ```
 

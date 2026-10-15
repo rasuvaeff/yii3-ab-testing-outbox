@@ -73,27 +73,30 @@ $conversion = new OutboxConversionTracker($outbox, $factory);
 $event = $ab->trackExposure($assignment);
 $ab->trackConversion($assignment, goal: 'purchase', exposure: $event);
 
-// route map for the shipped ClickHouse DDL (leading event_id for dedup):
+// route map for yii3-outbox-clickhouse — schema v2 tables of yii3-ab-testing-clickhouse:
 $routes = AbTestingClickHouseRoutes::map();
-// custom names:
-$routes = AbTestingClickHouseRoutes::map();          // schema v2
-$legacy = AbTestingClickHouseRoutes::legacyV1Map();  // drain queued v1 messages
+// while v1 messages queued before the 2.0 upgrade still drain:
+$legacy = AbTestingClickHouseRoutes::legacyV1Map();  // ab_outbox_exposures / ab_outbox_conversions
 ```
 
-Apply `migrations/` with `ClickHouseMigrationRunner` and placeholders matching
-the route names. The clean-install pipeline is:
-`tracker -> yii3-outbox-db -> yii3-outbox-clickhouse -> shipped ClickHouse DDL`.
+Create the v2 tables with `(new SchemaMigrations($client))->apply()` from
+`yii3-ab-testing-clickhouse` (a `suggest` of this package). `migrations/` here
+holds only the v1 drain tables. The clean-install pipeline is:
+`tracker -> yii3-outbox-db -> yii3-outbox-clickhouse (outbox:clickhouse:export) -> ab_exposures_v2 / ab_conversions_v2`.
 
 Custom serialization: implement `AbTestingOutboxMessageFactoryInterface`
 (default `DefaultAbTestingOutboxMessageFactory`) and pass it to the trackers.
+The factory returns an `AbTestingOutboxPayload` (type, JSON payload, aggregate
+id) that the tracker hands to `Outbox::record()`. Message types are fixed by
+`AbTestingOutboxEventType`: `ab.exposure`, `ab.conversion`.
 
-## Exposure payload
+## Exposure payload (v2)
 
 ```json
-{"v":1,"event_at":"2026-06-12 10:00:00","experiment":"checkout","variant":"green","subject_id":"user-1","is_forced":0,"is_fallback":0,"is_sticky":0,"environment":"production","context":{}}
+{"v":2,"event_id":"0198f2c1-4d3a-7c9e-8b21-6f4a2d9e0c17","occurred_at":"2026-08-01 10:00:00.123","experiment":"checkout","variant":"green","subject_id":"user-1","decision_reason":"assigned","assignment_source":"computed","experiment_revision":"db:7","environment":"production","dimensions":"{\"country\":\"RU\"}"}
 ```
 
-Conversion adds `"goal":"purchase"`. `v` is transport-meta only — not exported to ClickHouse.
+Conversion adds `goal` and `exposure_event_id`. `v` is transport-meta only — not exported to ClickHouse.
 
 The config-plugin requires the application param
 `rasuvaeff/yii3-ab-testing-outbox.aggregateIdSecret` to be a non-empty string;

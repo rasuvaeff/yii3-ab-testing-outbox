@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.0.1 — 2026-10-15
+
+### Documentation
+
+- `README.md` / `README.ru.md`: the ClickHouse routing section described the
+  v1 tables `ab_outbox_exposures` / `ab_outbox_conversions` and a
+  `migrations/` setup, while `AbTestingClickHouseRoutes::map()` targets the
+  schema v2 tables of `yii3-ab-testing-clickhouse`; it now documents the v2
+  route map, `SchemaMigrations` and the v1 drain map. The comparison table
+  named the direct ClickHouse writer removed in 2.0, the usage example never
+  passed the trackers to the facade, and the DI example called the 2.x
+  tracker constructor.
+- `llms.txt` and `examples/README.md`: the same routing correction, a v2
+  payload example, and `AbTestingOutboxEventType` / `AbTestingOutboxPayload`.
+- Link the family documentation site instead of a `vendor/` path that the
+  core's `export-ignore` removes.
+
 ## 3.0.0 — 2026-09-02
 
 ### Breaking
