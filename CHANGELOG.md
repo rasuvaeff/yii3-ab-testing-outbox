@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Mutation testing now counts code the tests execute without naming it in `#[Covers]`
+  (`infection --with-uncovered`), with `PublicVisibility` off as in the monorepo
+  template; overall MSI stays 100%. No `src/` or test changes.
+
 ## 3.0.1 — 2026-10-15
 
 ### Documentation
