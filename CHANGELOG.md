@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 3.0.2 — 2026-11-27
 
+- Docs: the agent skill example passed one argument to `OutboxExposureTracker`/`OutboxConversionTracker`; both require the message factory.
 - Mutation testing now counts code the tests execute without naming it in `#[Covers]`
   (`infection --with-uncovered`), with `PublicVisibility` off as in the monorepo
   template; overall MSI stays 100%. No `src/` or test changes.
