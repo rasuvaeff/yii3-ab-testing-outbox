@@ -56,10 +56,14 @@ while both maps are active.
 ## Canonical usage
 
 ```php
+$messageFactory = new DefaultAbTestingOutboxMessageFactory(
+    aggregateIdStrategy: new PseudonymousAggregateIdStrategy(secret: $secret),
+);
+
 $ab = new AbTesting(
     // …
-    exposureTracker: new OutboxExposureTracker($outbox),
-    conversionTracker: new OutboxConversionTracker($outbox),
+    exposureTracker: new OutboxExposureTracker($outbox, $messageFactory),
+    conversionTracker: new OutboxConversionTracker($outbox, $messageFactory),
     // The allow-list lives on the facade, so every delivery path filters
     // identically; configured per-adapter it would cover this one only.
     contextPolicy: new AllowListAnalyticsContextPolicy(allowedAttributes: ['country']),
